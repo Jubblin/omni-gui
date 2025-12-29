@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 )
 
@@ -16,34 +17,57 @@ var (
 	mu           sync.RWMutex
 )
 
+// setLanguageInternal sets the language without locking (caller must hold lock)
+func setLanguageInternal(langCode string) error {
+	slog.Info("Setting language", "language", langCode)
+
+	// Load translation file
+	filePath := fmt.Sprintf("locales/%s.json", langCode)
+	slog.Debug("Reading locale file", "file", filePath)
+	data, err := localesFS.ReadFile(filePath)
+	if err != nil {
+		slog.Error("Failed to read locale file", "file", filePath, "error", err)
+		return fmt.Errorf("failed to load locale file for %s: %w", langCode, err)
+	}
+	slog.Debug("Locale file read successfully", "file", filePath, "size_bytes", len(data))
+
+	slog.Debug("Unmarshaling locale JSON")
+	var langTranslations map[string]string
+	if err := json.Unmarshal(data, &langTranslations); err != nil {
+		slog.Error("Failed to unmarshal locale JSON", "file", filePath, "error", err)
+		return fmt.Errorf("failed to parse locale file for %s: %w", langCode, err)
+	}
+	slog.Info("Locale loaded successfully", "language", langCode, "translations_count", len(langTranslations))
+
+	translations[langCode] = langTranslations
+	currentLang = langCode
+	slog.Debug("Language set successfully", "language", langCode)
+	return nil
+}
+
 // Init initializes the i18n system with the given language code
 func Init(langCode string) error {
+	slog.Info("Initializing i18n", "language", langCode)
 	mu.Lock()
 	defer mu.Unlock()
 
 	translations = make(map[string]map[string]string)
-	return SetLanguage(langCode)
+	err := setLanguageInternal(langCode)
+	if err != nil {
+		slog.Error("Failed to initialize i18n", "language", langCode, "error", err)
+	} else {
+		slog.Info("i18n initialized successfully", "language", langCode)
+	}
+	return err
 }
 
 // SetLanguage sets the current language
 func SetLanguage(langCode string) error {
+	slog.Info("Setting language", "language", langCode)
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Load translation file
-	data, err := localesFS.ReadFile(fmt.Sprintf("locales/%s.json", langCode))
-	if err != nil {
-		return fmt.Errorf("failed to load locale file for %s: %w", langCode, err)
-	}
-
-	var langTranslations map[string]string
-	if err := json.Unmarshal(data, &langTranslations); err != nil {
-		return fmt.Errorf("failed to parse locale file for %s: %w", langCode, err)
-	}
-
-	translations[langCode] = langTranslations
-	currentLang = langCode
-	return nil
+	return setLanguageInternal(langCode)
 }
 
 // T translates a key with optional arguments
