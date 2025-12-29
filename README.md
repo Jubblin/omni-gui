@@ -645,6 +645,7 @@ Additional documentation is available in the `docs/` directory:
 - **[docs/MACHINE_ENHANCEMENTS.md](docs/MACHINE_ENHANCEMENTS.md)** - Machine endpoint enhancements and implementation details
 - **[docs/README.Docker.md](docs/README.Docker.md)** - Docker build and deployment guide
 - **[docs/TESTING_QUICK_START.md](docs/TESTING_QUICK_START.md)** - Quick start guide for testing
+- **[docs/FYNE_GUI_TREE_HIERARCHY.md](docs/FYNE_GUI_TREE_HIERARCHY.md)** - Fyne GUI tree structure hierarchy and navigation guide
 
 ### OIDC Authentication Documentation
 

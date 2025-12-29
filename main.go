@@ -155,32 +155,45 @@ func initializeApp(myWindow fyne.Window, ignoreEnv bool) (*client.Client, *AppSt
 }
 
 func buildInitialTree() *TreeNode {
-	resourceQueries := getResourceQueries()
-	children := make([]*TreeNode, 0, len(resourceQueries))
-	
-	for name, query := range resourceQueries {
-		// Create a node for each resource type
-		// Use a special type prefix to identify resource type nodes
-		nodeID := fmt.Sprintf("%s%s", resourceTypePrefix, string(query.Type))
-		child := &TreeNode{
-			ID:       nodeID,
-			Type:     fmt.Sprintf("%s%s", resourceTypePrefix, string(query.Type)),
-			Label:    name,
-			Resource: map[string]interface{}{
-				"resource_type": string(query.Type),
-				"is_list":       query.IsList,
-			},
-			Children: []*TreeNode{}, // Will be loaded lazily when expanded
-		}
-		children = append(children, child)
-	}
+	// Build tree structure based on API hierarchy:
+	// - Clusters (folder) -> Cluster -> MachineSets (folder) -> MachineSet -> ClusterMachines -> ClusterMachine -> Machine
+	// - Machines (folder) -> Machine -> ClusterMachine (reverse lookup) + MachineStatus
+	// - MachineSets (folder) -> MachineSet -> ClusterMachines -> ClusterMachine -> Machine
 	
 	return &TreeNode{
 		ID:       "",
 		Type:     "root",
 		Label:    "",
 		Resource: nil,
-		Children: children,
+		Children: []*TreeNode{
+			{
+				ID:    "clusters-top",
+				Type:  "resource-type-folder",
+				Label: i18n.T("resource.cluster"),
+				Resource: map[string]interface{}{
+					"resource_type": string(omni.ClusterType),
+				},
+				Children: []*TreeNode{},
+			},
+			{
+				ID:    "machines-top",
+				Type:  "resource-type-folder",
+				Label: i18n.T("resource.machine"),
+				Resource: map[string]interface{}{
+					"resource_type": string(omni.MachineType),
+				},
+				Children: []*TreeNode{},
+			},
+			{
+				ID:    "machinesets-top",
+				Type:  "resource-type-folder",
+				Label: i18n.T("resource.machine_set"),
+				Resource: map[string]interface{}{
+					"resource_type": string(omni.MachineSetType),
+				},
+				Children: []*TreeNode{},
+			},
+		},
 	}
 }
 
@@ -194,8 +207,12 @@ func createResourceIDInput() *widget.Entry {
 var nodeMap = make(map[widget.TreeNodeID]*TreeNode)
 
 func createResourceTree(appState *AppState) *widget.Tree {
-	// Clear node map when creating new tree
-	nodeMap = make(map[widget.TreeNodeID]*TreeNode)
+	// Ensure root node and its children are in the map
+	// Don't clear the map - we need the nodes that were set up in initializeApp
+	if appState.treeRoot != nil {
+		setRootNode(appState.treeRoot)
+		addNodeToMap(appState.treeRoot)
+	}
 	
 	tree := widget.NewTree(
 		// Child IDs callback - returns list of child IDs for a given node ID
@@ -305,8 +322,11 @@ func setRootNode(node *TreeNode) {
 }
 
 func addNodeToMap(node *TreeNode) {
-	if node != nil && node.ID != "" {
-		nodeMap[node.ID] = node
+	if node != nil {
+		// Add node to map (even root with empty ID)
+		if node.ID != "" {
+			nodeMap[node.ID] = node
+		}
 		// Also add all children recursively
 		for _, child := range node.Children {
 			addNodeToMap(child)
@@ -315,8 +335,18 @@ func addNodeToMap(node *TreeNode) {
 }
 
 func canHaveChildren(resourceType string) bool {
-	// Clusters and MachineSets folders can have children
-	if resourceType == "clusters-folder" || resourceType == "machinesets-folder" {
+	// Root can have children
+	if resourceType == "root" {
+		return true
+	}
+	
+	// Resource type folders can have children
+	if resourceType == "resource-type-folder" {
+		return true
+	}
+	
+	// Clusters, MachineSets, and Machines folders can have children
+	if resourceType == "clusters-folder" || resourceType == "machinesets-folder" || resourceType == "machines-folder" {
 		return true
 	}
 	
@@ -345,8 +375,8 @@ func getIconForResourceType(themeInstance fyne.Theme, resourceType string, isBra
 		return nil
 	}
 	
-	// Clusters and MachineSets folders always use folder icon
-	if resourceType == "clusters-folder" || resourceType == "machinesets-folder" {
+	// Resource type folders and grouping folders always use folder icon
+	if resourceType == "resource-type-folder" || resourceType == "clusters-folder" || resourceType == "machinesets-folder" || resourceType == "machines-folder" {
 		return themeInstance.Icon(theme.IconNameFolder)
 	}
 	
@@ -446,9 +476,9 @@ func loadNodeChildren(node *TreeNode, appState *AppState, ctx context.Context) {
 		return
 	}
 	
-	// Check if this is a resource type node (like "resource-type-clusters")
-	if strings.HasPrefix(node.Type, resourceTypePrefix) {
-		loadResourceTypeChildren(node, appState, ctx)
+	// Check if this is a resource type folder node
+	if node.Type == "resource-type-folder" {
+		loadResourceTypeFolderChildren(node, appState, ctx)
 		return
 	}
 	
@@ -471,6 +501,99 @@ func loadNodeChildren(node *TreeNode, appState *AppState, ctx context.Context) {
 	
 	// Add link nodes as children after loading regular children
 	addLinkNodes(node, appState, ctx)
+}
+
+// loadResourceTypeFolderChildren loads all resources of a given type when a top-level resource type folder is expanded
+func loadResourceTypeFolderChildren(node *TreeNode, appState *AppState, ctx context.Context) {
+	if node.Resource == nil {
+		return
+	}
+	
+	resourceTypeStr, ok := node.Resource["resource_type"].(string)
+	if !ok {
+		return
+	}
+	
+	resourceType := resource.Type(resourceTypeStr)
+	
+	// List all resources of this type
+	md := resource.NewMetadata(omniresources.DefaultNamespace, resourceType, "", resource.VersionUndefined)
+	list, err := appState.stateClient.List(ctx, md)
+	if err != nil {
+		slog.Error("Failed to list resources", "resource_type", resourceType, "error", err)
+		return
+	}
+	
+	children := make([]*TreeNode, 0, len(list.Items))
+	
+	// Convert resources to nodes
+	for _, item := range list.Items {
+		resourceMap := resconverter.ToMap(item)
+		resourceID, _ := extractResourceInfoFromMap(resourceMap)
+		enrichMachineResource(resourceMap, resourceTypeStr, resourceID, appState.stateClient, ctx, 0)
+		enrichClusterMachineResource(resourceMap, resourceTypeStr, resourceID, appState.stateClient, ctx, 0)
+		childNode := createResourceNodeFromMap(resourceMap, resourceID, resourceTypeStr)
+		children = append(children, childNode)
+	}
+	
+	// For clusters, wrap in folder
+	if resourceType == omni.ClusterType {
+		if len(children) > 0 {
+			clustersFolder := &TreeNode{
+				ID:       "clusters-folder",
+				Type:     "clusters-folder",
+				Label:    "Clusters",
+				Resource: map[string]interface{}{"type": "clusters-folder"},
+				Children: children,
+			}
+			node.Children = []*TreeNode{clustersFolder}
+			addNodeToMap(clustersFolder)
+		} else {
+			node.Children = []*TreeNode{}
+		}
+	} else if resourceType == omni.MachineSetType {
+		// For MachineSets, wrap in folder and sort
+		if len(children) > 0 {
+			sort.Slice(children, func(i, j int) bool {
+				return children[i].Label < children[j].Label
+			})
+			machineSetsFolder := &TreeNode{
+				ID:       "machinesets-folder",
+				Type:     "machinesets-folder",
+				Label:    "MachineSets",
+				Resource: map[string]interface{}{"type": "machinesets-folder"},
+				Children: children,
+			}
+			node.Children = []*TreeNode{machineSetsFolder}
+			addNodeToMap(machineSetsFolder)
+		} else {
+			node.Children = []*TreeNode{}
+		}
+	} else if resourceType == omni.MachineType {
+		// For Machines, wrap in folder
+		if len(children) > 0 {
+			machinesFolder := &TreeNode{
+				ID:       "machines-folder",
+				Type:     "machines-folder",
+				Label:    "Machines",
+				Resource: map[string]interface{}{"type": "machines-folder"},
+				Children: children,
+			}
+			node.Children = []*TreeNode{machinesFolder}
+			addNodeToMap(machinesFolder)
+		} else {
+			node.Children = []*TreeNode{}
+		}
+	} else {
+		node.Children = children
+	}
+	
+	// Add all children to the map
+	for _, child := range node.Children {
+		addNodeToMap(child)
+	}
+	
+	slog.Info("Loaded resource type folder children", "resource_type", resourceType, "count", len(children))
 }
 
 // groupMachineSetsIntoFolder groups MachineSet nodes into a folder and sorts them by name
@@ -592,80 +715,12 @@ func loadClusterChildren(node *TreeNode, appState *AppState, ctx context.Context
 		"orphaned_clustermachines", len(children)-len(machineSetIDs))
 }
 
-// addLinkNodes adds link nodes as children to the given node
-func addLinkNodes(node *TreeNode, appState *AppState, ctx context.Context, resourceType, resourceID string) {
-	links := make([]*TreeNode, 0)
-	
-	// Add machine ID links
-	if machineIDs := findMachineIDs(node.Resource); len(machineIDs) > 0 {
-		for _, machineID := range machineIDs {
-			linkID := fmt.Sprintf("link-machine-%s", machineID)
-			linkNode := createLinkNodeWithAction(linkID, fmt.Sprintf("Machine: %s", machineID), "machine", func() {
-				loadMachineByID(machineID, appState)
-			})
-			links = append(links, linkNode)
-		}
-	}
-	
-	// Add Kubernetes version links
-	if versions := findKubernetesVersions(node.Resource); len(versions) > 0 {
-		for _, version := range versions {
-			linkID := fmt.Sprintf("link-k8s-version-%s", version)
-			linkNode := createLinkNodeWithAction(linkID, fmt.Sprintf("Kubernetes Version: %s", version), "k8s-version", func() {
-				loadResourcesByK8sVersion(version, appState)
-			})
-			links = append(links, linkNode)
-		}
-	}
-	
-	// Add MachineSet links
-	if machineSetIDs := findMachineSetIDs(node.Resource); len(machineSetIDs) > 0 {
-		for _, machineSetID := range machineSetIDs {
-			linkID := fmt.Sprintf("link-machineset-%s", machineSetID)
-			linkNode := createLinkNodeWithAction(linkID, fmt.Sprintf("Machine Set: %s", machineSetID), "machineset", func() {
-				loadMachinesByMachineSet(machineSetID, appState)
-			})
-			links = append(links, linkNode)
-		}
-	}
-	
-	// Add resource action links based on resource type
-	switch resourceType {
-	case string(omni.ClusterType):
-		links = append(links, createActionLinkNodes(resourceID, appState)...)
-	case string(omni.MachineType):
-		links = append(links, createMachineActionLinkNodes(resourceID, appState)...)
-	case string(omni.MachineSetType):
-		links = append(links, createMachineSetActionLinkNodes(resourceID, appState)...)
-	case string(omni.ClusterMachineType):
-		links = append(links, createClusterMachineActionLinkNodes(resourceID, appState)...)
-	}
-	
-	// Append link nodes to existing children
-	node.Children = append(node.Children, links...)
-}
-
-func createLinkNode(id, label, linkType string, action func()) *TreeNode {
-	// Store action in a way that can be retrieved later
-	// We'll use a closure to capture the action
-	return &TreeNode{
-		ID:    id,
-		Type:  fmt.Sprintf("link-%s", linkType),
-		Label: label,
-		Resource: map[string]interface{}{
-			"link_type": linkType,
-			"link_id":   id,
-		},
-		Children: []*TreeNode{},
-	}
-}
-
 // linkActionMap stores actions for link nodes
 var linkActionMap = make(map[string]func())
 
 func createLinkNodeWithAction(id, label, linkType string, action func()) *TreeNode {
 	linkActionMap[id] = action
-	return createLinkNode(id, label, linkType, action)
+	return createLinkNode("link-"+linkType, label, id, action)
 }
 
 func createActionLinkNodes(clusterID string, appState *AppState) []*TreeNode {
@@ -777,7 +832,7 @@ func loadClusterMachineChildren(node *TreeNode, appState *AppState, ctx context.
 func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context, machineID string) {
 	children := make([]*TreeNode, 0)
 	
-	// Find ClusterMachines that use this Machine
+	// Find ClusterMachine that uses this Machine (reverse lookup)
 	// ClusterMachine ID is the machine ID
 	clusterMachineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineType, machineID, resource.VersionUndefined)
 	cm, err := appState.stateClient.Get(ctx, clusterMachineMD)
@@ -1697,16 +1752,6 @@ func updateMachineSetLinks(resourceData map[string]interface{}, appState *AppSta
 	}
 }
 
-func findMachineSetIDs(resourceData map[string]interface{}) []string {
-	var machineSetIDs []string
-	if labels, ok := resourceData["labels"].(map[string]interface{}); ok {
-		if machineSet, ok := labels[labelKeyMachineSet].(string); ok && machineSet != "" {
-			machineSetIDs = append(machineSetIDs, machineSet)
-		}
-	}
-	return machineSetIDs
-}
-
 // addLinkNodes adds link nodes as children to a resource node
 func addLinkNodes(node *TreeNode, appState *AppState, ctx context.Context) {
 	if node.Resource == nil {
@@ -1778,6 +1823,19 @@ func addLinkNodes(node *TreeNode, appState *AppState, ctx context.Context) {
 		}
 	}
 	
+	// Add resource action links based on resource type
+	resourceID, resourceType := extractResourceInfoFromMap(node.Resource)
+	switch resourceType {
+	case string(omni.ClusterType):
+		linkNodes = append(linkNodes, createActionLinkNodes(resourceID, appState)...)
+	case string(omni.MachineType):
+		linkNodes = append(linkNodes, createMachineActionLinkNodes(resourceID, appState)...)
+	case string(omni.MachineSetType):
+		linkNodes = append(linkNodes, createMachineSetActionLinkNodes(resourceID, appState)...)
+	case string(omni.ClusterMachineType):
+		linkNodes = append(linkNodes, createClusterMachineActionLinkNodes(resourceID, appState)...)
+	}
+	
 	// Append link nodes to existing children
 	node.Children = append(node.Children, linkNodes...)
 	
@@ -1792,7 +1850,9 @@ func createLinkNode(linkType, label, targetID string, action func()) *TreeNode {
 	linkID := fmt.Sprintf("%s-%s", linkType, targetID)
 	
 	// Store the action in a map so we can execute it when the link is clicked
-	linkActionMap[linkID] = action
+	if action != nil {
+		linkActionMap[linkID] = action
+	}
 	
 	return &TreeNode{
 		ID:    linkID,
@@ -1806,9 +1866,6 @@ func createLinkNode(linkType, label, targetID string, action func()) *TreeNode {
 		Children: []*TreeNode{},
 	}
 }
-
-// linkActionMap stores actions for link nodes
-var linkActionMap = make(map[string]func())
 
 func loadMachineByID(machineID string, appState *AppState) {
 	ctx := context.Background()
@@ -2316,6 +2373,16 @@ func main() {
 	burgerMenu := createBurgerMenu(myWindow)
 
 	setupAppState(appState, resourceTree, nil, statusLabel, detailComponents)
+	
+	// Ensure root node children are in the map and tree is ready
+	if appState.treeRoot != nil {
+		slog.Info("Root node has children", "count", len(appState.treeRoot.Children))
+		for i, child := range appState.treeRoot.Children {
+			slog.Info("Root child", "index", i, "id", child.ID, "label", child.Label, "type", child.Type)
+		}
+		// Re-add to map to ensure they're accessible
+		addNodeToMap(appState.treeRoot)
+	}
 
 	refreshUI := func() {
 		statusLabel.SetText(i18n.T("app.ready"))
