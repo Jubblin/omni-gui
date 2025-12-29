@@ -13,12 +13,23 @@ import (
 
 // ClusterMachineResponse represents the cluster machine information returned by the API
 type ClusterMachineResponse struct {
-	ID               string            `json:"id"`
-	Namespace        string            `json:"namespace"`
-	MachineID        string            `json:"machine_id,omitempty"`
-	KubernetesVersion string           `json:"kubernetes_version,omitempty"`
-	Labels           map[string]string `json:"labels,omitempty"`
-	Links            map[string]string `json:"_links,omitempty"`
+	ID                string            `json:"id"`
+	Namespace         string            `json:"namespace"`
+	MachineID         string            `json:"machine_id,omitempty"`
+	KubernetesVersion string            `json:"kubernetes_version,omitempty"`
+	ManagementAddress string            `json:"management_address,omitempty"`
+	Connected         bool              `json:"connected,omitempty"`
+	UseGrpcTunnel     bool              `json:"use_grpc_tunnel,omitempty"`
+	Labels            map[string]string `json:"labels,omitempty"`
+	// Status fields (from MachineStatus resource) - same as MachineResponse
+	Hostname          string            `json:"hostname,omitempty"`
+	Platform          string            `json:"platform,omitempty"`
+	Arch              string            `json:"arch,omitempty"`
+	TalosVersion      string            `json:"talos_version,omitempty"`
+	Role              string            `json:"role,omitempty"`
+	Maintenance       bool              `json:"maintenance,omitempty"`
+	LastError         string            `json:"last_error,omitempty"`
+	Links             map[string]string `json:"_links,omitempty"`
 }
 
 // ClusterMachineHandler handles cluster machine requests
@@ -93,12 +104,49 @@ func (h *ClusterMachineHandler) ListClusterMachines(c *gin.Context) {
 			resp.Labels[key] = value
 		}
 
+		// Try to fetch Machine resource to get management address, connected status, etc.
+		machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, clusterMachineID, resource.VersionUndefined)
+		if machineRes, err := st.Get(c.Request.Context(), machineMD); err == nil {
+			if m, ok := machineRes.(*omni.Machine); ok {
+				resp.ManagementAddress = m.TypedSpec().Value.ManagementAddress
+				resp.Connected = m.TypedSpec().Value.Connected
+				resp.UseGrpcTunnel = m.TypedSpec().Value.UseGrpcTunnel
+			}
+		}
+
+		// Try to fetch and include machine status information (same as MachineResponse)
+		statusMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineStatusType, clusterMachineID, resource.VersionUndefined)
+		if statusRes, err := st.Get(c.Request.Context(), statusMD); err == nil {
+			if ms, ok := statusRes.(*omni.MachineStatus); ok {
+				statusSpec := ms.TypedSpec().Value
+				resp.TalosVersion = statusSpec.TalosVersion
+				resp.Role = statusSpec.Role.String()
+				resp.Maintenance = statusSpec.Maintenance
+				if statusSpec.LastError != "" {
+					resp.LastError = statusSpec.LastError
+				}
+				if statusSpec.Network != nil {
+					resp.Hostname = statusSpec.Network.Hostname
+				}
+				if statusSpec.PlatformMetadata != nil {
+					resp.Platform = statusSpec.PlatformMetadata.Platform
+				}
+				if statusSpec.Hardware != nil {
+					resp.Arch = statusSpec.Hardware.Arch
+				}
+			}
+		}
+
 		// Try to find cluster ID from labels
 		if clusterID, ok := cm.Metadata().Labels().Get("omni.sidero.dev/cluster"); ok {
 			resp.Links["cluster"] = buildURL(c, "/api/v1/clusters/"+clusterID)
 		}
 
-		// Add links to related resources
+		// Add links to related resources (same as MachineResponse)
+		resp.Links["labels"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/labels")
+		resp.Links["extensions"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/extensions")
+		resp.Links["upgrade-status"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/upgrade-status")
+		resp.Links["metrics"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/metrics")
 		resp.Links["status"] = buildURL(c, "/api/v1/clustermachines/"+clusterMachineID+"/status")
 		resp.Links["config-status"] = buildURL(c, "/api/v1/clustermachines/"+clusterMachineID+"/config-status")
 		resp.Links["talos-version"] = buildURL(c, "/api/v1/clustermachines/"+clusterMachineID+"/talos-version")
@@ -163,12 +211,49 @@ func (h *ClusterMachineHandler) GetClusterMachine(c *gin.Context) {
 		resp.Labels[key] = value
 	}
 
+	// Try to fetch Machine resource to get management address, connected status, etc.
+	machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, clusterMachineID, resource.VersionUndefined)
+	if machineRes, err := st.Get(c.Request.Context(), machineMD); err == nil {
+		if m, ok := machineRes.(*omni.Machine); ok {
+			resp.ManagementAddress = m.TypedSpec().Value.ManagementAddress
+			resp.Connected = m.TypedSpec().Value.Connected
+			resp.UseGrpcTunnel = m.TypedSpec().Value.UseGrpcTunnel
+		}
+	}
+
+	// Try to fetch and include machine status information (same as MachineResponse)
+	statusMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineStatusType, clusterMachineID, resource.VersionUndefined)
+	if statusRes, err := st.Get(c.Request.Context(), statusMD); err == nil {
+		if ms, ok := statusRes.(*omni.MachineStatus); ok {
+			statusSpec := ms.TypedSpec().Value
+			resp.TalosVersion = statusSpec.TalosVersion
+			resp.Role = statusSpec.Role.String()
+			resp.Maintenance = statusSpec.Maintenance
+			if statusSpec.LastError != "" {
+				resp.LastError = statusSpec.LastError
+			}
+			if statusSpec.Network != nil {
+				resp.Hostname = statusSpec.Network.Hostname
+			}
+			if statusSpec.PlatformMetadata != nil {
+				resp.Platform = statusSpec.PlatformMetadata.Platform
+			}
+			if statusSpec.Hardware != nil {
+				resp.Arch = statusSpec.Hardware.Arch
+			}
+		}
+	}
+
 	// Try to find cluster ID from labels
 	if clusterID, ok := cm.Metadata().Labels().Get("omni.sidero.dev/cluster"); ok {
 		resp.Links["cluster"] = buildURL(c, "/api/v1/clusters/"+clusterID)
 	}
 
-	// Add links to related resources
+	// Add links to related resources (same as MachineResponse)
+	resp.Links["labels"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/labels")
+	resp.Links["extensions"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/extensions")
+	resp.Links["upgrade-status"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/upgrade-status")
+	resp.Links["metrics"] = buildURL(c, "/api/v1/machines/"+clusterMachineID+"/metrics")
 	resp.Links["status"] = buildURL(c, "/api/v1/clustermachines/"+clusterMachineID+"/status")
 	resp.Links["config-status"] = buildURL(c, "/api/v1/clustermachines/"+clusterMachineID+"/config-status")
 	resp.Links["talos-version"] = buildURL(c, "/api/v1/clustermachines/"+clusterMachineID+"/talos-version")
