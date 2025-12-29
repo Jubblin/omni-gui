@@ -27,8 +27,9 @@ Talos Omni Control API is a Go-based REST API that acts as a bridge between your
 
 ### Authentication
 
-The API requires authentication to connect to Omni. You can use either:
+The API requires authentication to connect to Omni. You can use one of the following methods:
 
+- **OIDC Authentication**: Using OpenID Connect (OIDC) with Client Credentials flow
 - **Service Account Authentication**: Using a service account key
 - **PGP Authentication**: Using user account with PGP keys
 
@@ -144,6 +145,16 @@ The API is configured using environment variables:
 
 Choose one of the following authentication methods:
 
+**OIDC Authentication:**
+
+- `OMNI_OIDC_ISSUER_URL`: OIDC provider issuer URL (required)
+- `OMNI_OIDC_CLIENT_ID`: OIDC client ID (required)
+- `OMNI_OIDC_CLIENT_SECRET`: OIDC client secret (required)
+- `OMNI_OIDC_SCOPES`: Comma-separated list of scopes (optional, default: "openid profile email")
+- `OMNI_OIDC_AUDIENCE`: Token audience claim (optional)
+- `OMNI_OIDC_FLOW`: Authentication flow type (optional, default: "client_credentials")
+- `OMNI_OIDC_TOKEN_CACHE_FILE`: File path for token caching (optional)
+
 **Service Account Authentication:**
 
 - `OMNI_SERVICE_ACCOUNT` or `OMNI_SERVICE_ACCOUNT_KEY`: Service account key (base64 encoded)
@@ -161,6 +172,16 @@ Choose one of the following authentication methods:
 
 ### Example Configuration
 
+**OIDC Authentication:**
+```bash
+export OMNI_ENDPOINT="https://omni.example.com"
+export OMNI_OIDC_ISSUER_URL="https://your-oidc-provider.com"
+export OMNI_OIDC_CLIENT_ID="your-client-id"
+export OMNI_OIDC_CLIENT_SECRET="your-client-secret"
+export PORT="8080"
+```
+
+**Service Account Authentication:**
 ```bash
 export OMNI_ENDPOINT="https://omni.example.com"
 export OMNI_SERVICE_ACCOUNT_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -173,6 +194,15 @@ export PORT="8080"
 
 1. Set required environment variables:
 
+**Using OIDC:**
+```bash
+export OMNI_ENDPOINT="https://your-omni-instance.com"
+export OMNI_OIDC_ISSUER_URL="https://your-oidc-provider.com"
+export OMNI_OIDC_CLIENT_ID="your-client-id"
+export OMNI_OIDC_CLIENT_SECRET="your-client-secret"
+```
+
+**Using Service Account:**
 ```bash
 export OMNI_ENDPOINT="https://your-omni-instance.com"
 export OMNI_SERVICE_ACCOUNT_KEY="your-service-account-key"
@@ -421,7 +451,7 @@ All major handlers have comprehensive test coverage including:
 - Link generation
 - Error handling paths
 
-See `TEST_COVERAGE.md` for detailed coverage information and recommendations.
+See [docs/TEST_COVERAGE.md](docs/TEST_COVERAGE.md) for detailed coverage information and recommendations.
 
 ### Project Structure
 
@@ -504,7 +534,7 @@ export INTEGRATION_TESTS=true
 go test ./integration/... -v
 ```
 
-See `TEST_COVERAGE.md` for detailed coverage information.
+See [docs/TEST_COVERAGE.md](docs/TEST_COVERAGE.md) for detailed coverage information.
 
 ### Generating Swagger Documentation
 
@@ -602,17 +632,41 @@ docker pull ghcr.io/jubblin/omni-api:0.0.1
 docker pull --platform linux/arm64 ghcr.io/jubblin/omni-api:latest
 ```
 
-For detailed Docker usage, see [README.Docker.md](README.Docker.md).
+For detailed Docker usage, see [docs/README.Docker.md](docs/README.Docker.md).
 
 ## Documentation
 
-Additional documentation is available in the following files:
+Additional documentation is available in the `docs/` directory:
 
-- **[RESOURCES.md](RESOURCES.md)** - Complete list of available Omni resources, implementation status, and resource details
-- **[TEST_COVERAGE.md](TEST_COVERAGE.md)** - Test coverage report, statistics, and recommendations
-- **[MACHINE_ENHANCEMENTS.md](MACHINE_ENHANCEMENTS.md)** - Machine endpoint enhancements and implementation details
+### Core Documentation
+
+- **[docs/RESOURCES.md](docs/RESOURCES.md)** - Complete list of available Omni resources, implementation status, and resource details
+- **[docs/TEST_COVERAGE.md](docs/TEST_COVERAGE.md)** - Test coverage report, statistics, and recommendations
+- **[docs/MACHINE_ENHANCEMENTS.md](docs/MACHINE_ENHANCEMENTS.md)** - Machine endpoint enhancements and implementation details
+- **[docs/README.Docker.md](docs/README.Docker.md)** - Docker build and deployment guide
+- **[docs/TESTING_QUICK_START.md](docs/TESTING_QUICK_START.md)** - Quick start guide for testing
+
+### OIDC Authentication Documentation
+
+- **[docs/OIDC_INTEGRATION.md](docs/OIDC_INTEGRATION.md)** - Comprehensive OIDC integration guide
+- **[docs/OIDC_QUICK_START.md](docs/OIDC_QUICK_START.md)** - Quick start guide for OIDC authentication
+- **[docs/OIDC_SIMPLIFIED_CONFIG.md](docs/OIDC_SIMPLIFIED_CONFIG.md)** - Simplified OIDC configuration guide
+- **[docs/OIDC_TESTING_GUIDE.md](docs/OIDC_TESTING_GUIDE.md)** - Complete testing guide for OIDC
+- **[docs/OIDC_CONFIGURATION_ANALYSIS.md](docs/OIDC_CONFIGURATION_ANALYSIS.md)** - Technical analysis of OIDC configuration options
+- **[docs/OIDC_CLIENT_SIMPLIFICATION.md](docs/OIDC_CLIENT_SIMPLIFICATION.md)** - Client configuration simplification details
+
+### OIDC Implementation History
+
+- **[docs/OIDC_IMPLEMENTATION_PLAN.md](docs/OIDC_IMPLEMENTATION_PLAN.md)** - Initial implementation plan
+- **[docs/OIDC_IMPLEMENTATION_STATUS.md](docs/OIDC_IMPLEMENTATION_STATUS.md)** - Implementation status tracking
+- **[docs/OIDC_IMPLEMENTATION_SUMMARY.md](docs/OIDC_IMPLEMENTATION_SUMMARY.md)** - Implementation summary
+- **[docs/OIDC_COMPLETE.md](docs/OIDC_COMPLETE.md)** - Completion status
+- **[docs/OIDC_FINAL_STATUS.md](docs/OIDC_FINAL_STATUS.md)** - Final status report
+- **[docs/OIDC_INTEGRATION_SUCCESS.md](docs/OIDC_INTEGRATION_SUCCESS.md)** - Integration success report
+
+### Other Documentation
+
 - **[integration/README.md](integration/README.md)** - Integration test suite documentation
-- **[README.Docker.md](README.Docker.md)** - Docker build and deployment guide
 - **[.github/workflows/README.md](.github/workflows/README.md)** - CI/CD workflow documentation
 - **[.slsa/README.md](.slsa/README.md)** - SLSA compliance documentation
 - **[.checkov-compliance.md](.checkov-compliance.md)** - Checkov Dockerfile compliance documentation

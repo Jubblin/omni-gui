@@ -3,14 +3,18 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -119,25 +123,39 @@ func getResourceQueries() map[string]ResourceQuery {
 	}
 }
 
-func initializeApp(myWindow fyne.Window) (*client.Client, *AppState) {
-	omniClient, err := omniclient.NewOmniClient()
+func initializeApp(myWindow fyne.Window, ignoreEnv bool) (*client.Client, *AppState) {
+	slog.Info("Creating Omni client")
+	omniClient, err := omniclient.NewOmniClient(ignoreEnv)
 	if err != nil {
-		log.Printf("Failed to create Omni client: %v", err)
+		slog.Error("Failed to create Omni client", "error", err)
 		// Format directive is in translation file: "app.error.client" = "Error: %v\n\nPlease set OMNI_ENDPOINT..."
 		errorLabel := widget.NewLabel(i18n.T("app.error.client", err)) //nolint
 		errorLabel.Wrapping = fyne.TextWrapWord
 		myWindow.SetContent(container.NewScroll(errorLabel))
+		slog.Info("Error content set on window")
 		return nil, nil
 	}
+	slog.Info("Omni client created successfully")
 
+	root := &TreeNode{
+		ID:       "",
+		Type:     "root",
+		Label:    "",
+		Children: []*TreeNode{
+			{
+				ID:       "loading",
+				Type:     "placeholder",
+				Label:    i18n.T("resource.querying"),
+				Children: []*TreeNode{},
+			},
+		},
+	}
+	setRootNode(root)
+	addNodeToMap(root)
+	
 	appState := &AppState{
 		stateClient: omniClient.Omni().State(),
-		treeRoot: &TreeNode{
-			ID:       "",
-			Type:     "root",
-			Label:    i18n.T("tree.root"),
-			Children: []*TreeNode{},
-		},
+		treeRoot:    root,
 	}
 
 	return omniClient, appState
@@ -149,86 +167,431 @@ func createResourceIDInput() *widget.Entry {
 	return entry
 }
 
+// Tree node storage - map for O(1) lookup
+var nodeMap = make(map[widget.TreeNodeID]*TreeNode)
+
 func createResourceTree(appState *AppState) *widget.Tree {
+	// Clear node map when creating new tree
+	nodeMap = make(map[widget.TreeNodeID]*TreeNode)
+	
 	tree := widget.NewTree(
+		// Child IDs callback - returns list of child IDs for a given node ID
 		func(id widget.TreeNodeID) []widget.TreeNodeID {
-			return getNodeChildren(id, appState)
+			node := getNodeByID(id)
+			if node == nil {
+				return []widget.TreeNodeID{}
+			}
+			childIDs := make([]widget.TreeNodeID, 0, len(node.Children))
+			for _, child := range node.Children {
+				childIDs = append(childIDs, child.ID)
+			}
+			return childIDs
 		},
+		// Is branch callback - determines if a node can be expanded
 		func(id widget.TreeNodeID) bool {
-			return isBranch(id, appState)
+			node := getNodeByID(id)
+			if node == nil {
+				return false
+			}
+			// If it has children, it's a branch
+			if len(node.Children) > 0 {
+				return true
+			}
+			// If it can have children (even if not loaded), it's a branch
+			return canHaveChildren(node.Type)
 		},
+		// Create widget callback - creates the UI widget for a node
 		func(branch bool) fyne.CanvasObject {
-			return widget.NewLabel("")
+			// Create a container with icon and label
+			icon := widget.NewIcon(nil)
+			// Set a minimum size for the icon so it's visible
+			icon.Resize(fyne.NewSize(theme.IconInlineSize(), theme.IconInlineSize()))
+			label := widget.NewLabel("")
+			return container.NewHBox(icon, label)
 		},
+		// Update widget callback - updates the UI widget with node data
 		func(id widget.TreeNodeID, branch bool, obj fyne.CanvasObject) {
-			label := obj.(*widget.Label)
-			node := getNodeByID(id, appState)
+			// The container is a HBox, access its objects
+			box := obj.(*fyne.Container)
+			icon := box.Objects[0].(*widget.Icon)
+			label := box.Objects[1].(*widget.Label)
+			
+			// Empty ID is the invisible root - don't show anything
+			if id == "" {
+				icon.SetResource(nil)
+				label.SetText("")
+				return
+			}
+			
+			node := getNodeByID(id)
 			if node != nil {
 				label.SetText(node.Label)
+				// Set icon based on resource type - get theme from current app
+				app := fyne.CurrentApp()
+				if app != nil {
+					themeInstance := app.Settings().Theme()
+					if themeInstance != nil {
+						iconResource := getIconForResourceType(themeInstance, node.Type, branch)
+						if iconResource != nil {
+							icon.SetResource(iconResource)
+							icon.Refresh()
+						} else {
+							slog.Debug("Icon resource is nil", "resource_type", node.Type, "is_branch", branch)
+							icon.SetResource(nil)
+						}
+					} else {
+						slog.Debug("Theme instance is nil")
+						icon.SetResource(nil)
+					}
+				} else {
+					slog.Debug("Current app is nil")
+					icon.SetResource(nil)
+				}
+			} else {
+				icon.SetResource(nil)
+				label.SetText("")
 			}
 		},
 	)
 	return tree
 }
 
-func getNodeChildren(id widget.TreeNodeID, appState *AppState) []widget.TreeNodeID {
+func getNodeByID(id widget.TreeNodeID) *TreeNode {
+	// Empty string is the root
 	if id == "" {
-		if appState.treeRoot == nil {
-			return []widget.TreeNodeID{}
-		}
-		children := make([]widget.TreeNodeID, 0, len(appState.treeRoot.Children))
-		for _, child := range appState.treeRoot.Children {
-			children = append(children, child.ID)
-		}
-		return children
+		return getRootNode()
 	}
-
-	node := getNodeByID(id, appState)
-	if node == nil {
-		return []widget.TreeNodeID{}
-	}
-
-	children := make([]widget.TreeNodeID, 0, len(node.Children))
-	for _, child := range node.Children {
-		children = append(children, child.ID)
-	}
-	return children
+	// Look up in map
+	return nodeMap[id]
 }
 
-func isBranch(id widget.TreeNodeID, appState *AppState) bool {
-	node := getNodeByID(id, appState)
-	if node == nil {
+func getRootNode() *TreeNode {
+	// This will be set in appState.treeRoot
+	// We need to access it through a global or pass it differently
+	// For now, we'll use a different approach - store root separately
+	return rootNode
+}
+
+var rootNode *TreeNode
+
+func setRootNode(node *TreeNode) {
+	rootNode = node
+	if node != nil {
+		nodeMap[""] = node
+	}
+}
+
+func addNodeToMap(node *TreeNode) {
+	if node != nil && node.ID != "" {
+		nodeMap[node.ID] = node
+		// Also add all children recursively
+		for _, child := range node.Children {
+			addNodeToMap(child)
+		}
+	}
+}
+
+func canHaveChildren(resourceType string) bool {
+	switch resourceType {
+	case string(omni.ClusterType), string(omni.MachineSetType), string(omni.ClusterMachineType), string(omni.MachineType):
+		return true
+	case string(omni.KubernetesVersionType):
+		return true // Can show related resources with this version
+	case string(omni.MachineStatusType):
+		return false // MachineStatus is a leaf node
+	default:
 		return false
 	}
-	return len(node.Children) > 0
 }
 
-func getNodeByID(id widget.TreeNodeID, appState *AppState) *TreeNode {
-	if id == "" {
-		return appState.treeRoot
+func getIconForResourceType(themeInstance fyne.Theme, resourceType string, isBranch bool) fyne.Resource {
+	if themeInstance == nil {
+		slog.Warn("Theme instance is nil in getIconForResourceType")
+		return nil
 	}
-	return findNodeRecursive(appState.treeRoot, id)
-}
-
-func findNodeRecursive(node *TreeNode, id widget.TreeNodeID) *TreeNode {
-	if node.ID == id {
-		return node
-	}
-	for _, child := range node.Children {
-		if found := findNodeRecursive(child, id); found != nil {
-			return found
+	
+	// Use theme icons for different resource types
+	// Get the icon resource from the theme using the theme package constants
+	switch resourceType {
+	case string(omni.ClusterType):
+		if isBranch {
+			return themeInstance.Icon(theme.IconNameFolder)
 		}
+		return themeInstance.Icon(theme.IconNameComputer)
+	case string(omni.MachineSetType):
+		if isBranch {
+			return themeInstance.Icon(theme.IconNameFolder)
+		}
+		return themeInstance.Icon(theme.IconNameStorage)
+	case string(omni.ClusterMachineType):
+		if isBranch {
+			return themeInstance.Icon(theme.IconNameFolder)
+		}
+		return themeInstance.Icon(theme.IconNameComputer)
+	case string(omni.MachineType):
+		if isBranch {
+			return themeInstance.Icon(theme.IconNameFolder)
+		}
+		return themeInstance.Icon(theme.IconNameComputer)
+	case string(omni.MachineStatusType):
+		return themeInstance.Icon(theme.IconNameInfo)
+	case string(omni.KubernetesVersionType):
+		if isBranch {
+			return themeInstance.Icon(theme.IconNameFolder)
+		}
+		return themeInstance.Icon(theme.IconNameDocument)
+	default:
+		if isBranch {
+			return themeInstance.Icon(theme.IconNameFolder)
+		}
+		return themeInstance.Icon(theme.IconNameFile)
 	}
-	return nil
 }
 
 func setupTreeSelection(resourceTree *widget.Tree, appState *AppState) {
+	// Handle node selection - show details in detail pane
 	resourceTree.OnSelected = func(id widget.TreeNodeID) {
-		node := getNodeByID(id, appState)
+		if id == "" {
+			return
+		}
+		node := getNodeByID(id)
 		if node != nil && node.Resource != nil {
 			updateDetailPane(node.Resource, appState)
 		}
 	}
+	
+	// Lazy load children when a branch is expanded
+	resourceTree.OnBranchOpened = func(id widget.TreeNodeID) {
+		if id == "" {
+			return
+		}
+		node := getNodeByID(id)
+		if node == nil {
+			return
+		}
+		// Only load if children haven't been loaded yet
+		if len(node.Children) == 0 && node.Resource != nil {
+			ctx := context.Background()
+			loadNodeChildren(node, appState, ctx)
+			// Add newly loaded children to the map
+			addNodeToMap(node)
+			// Refresh tree to show new children
+			resourceTree.Refresh()
+		}
+	}
+}
+
+func loadNodeChildren(node *TreeNode, appState *AppState, ctx context.Context) {
+	if node.Resource == nil {
+		return
+	}
+	
+	resourceID, resourceType := extractResourceInfoFromMap(node.Resource)
+	slog.Info("Loading children for node", "resource_type", resourceType, "resource_id", resourceID)
+	
+	switch resourceType {
+	case string(omni.ClusterType):
+		loadClusterChildren(node, appState, ctx, resourceID)
+	case string(omni.MachineSetType):
+		loadMachineSetChildren(node, appState, ctx, resourceID)
+	case string(omni.ClusterMachineType):
+		loadClusterMachineChildren(node, appState, ctx, resourceID)
+	case string(omni.MachineType):
+		loadMachineChildren(node, appState, ctx, resourceID)
+	case string(omni.KubernetesVersionType):
+		loadKubernetesVersionChildren(node, appState, ctx, resourceID)
+	}
+}
+
+func loadClusterChildren(node *TreeNode, appState *AppState, ctx context.Context, clusterID string) {
+	children := make([]*TreeNode, 0)
+	
+	// First, collect all MachineSets for this cluster and track their IDs
+	machineSetIDs := make(map[string]bool)
+	machineSetMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetType, "", resource.VersionUndefined)
+	machineSetList, err := appState.stateClient.List(ctx, machineSetMD)
+	if err == nil {
+		for _, item := range machineSetList.Items {
+			ms, ok := item.(*omni.MachineSet)
+			if !ok {
+				continue
+			}
+			labels := ms.Metadata().Labels()
+			if labels != nil {
+				if cluster, ok := labels.Get("omni.sidero.dev/cluster"); ok && cluster == clusterID {
+					msID := ms.Metadata().ID()
+					machineSetIDs[msID] = true
+					resourceMap := resconverter.ToMap(ms)
+					childNode := createResourceNodeFromMap(resourceMap, msID, string(omni.MachineSetType))
+					children = append(children, childNode)
+				}
+			}
+		}
+	}
+	
+	// Find ClusterMachines for this cluster, but only add those that don't belong to a MachineSet
+	clusterMachineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineType, "", resource.VersionUndefined)
+	clusterMachineList, err := appState.stateClient.List(ctx, clusterMachineMD)
+	if err == nil {
+		for _, item := range clusterMachineList.Items {
+			cm, ok := item.(*omni.ClusterMachine)
+			if !ok {
+				continue
+			}
+			labels := cm.Metadata().Labels()
+			if labels == nil {
+				continue
+			}
+			
+			// Check if this ClusterMachine belongs to the cluster
+			cluster, ok := labels.Get("omni.sidero.dev/cluster")
+			if !ok || cluster != clusterID {
+				continue
+			}
+			
+			// Only add ClusterMachine if it doesn't belong to a MachineSet
+			// (ClusterMachines that belong to MachineSets will be shown under their MachineSet)
+			if machineSet, ok := labels.Get(labelKeyMachineSet); ok && machineSet != "" {
+				// This ClusterMachine belongs to a MachineSet, skip it at cluster level
+				continue
+			}
+			
+			// This ClusterMachine doesn't belong to a MachineSet, add it to cluster
+			resourceMap := resconverter.ToMap(cm)
+			enrichClusterMachineResource(resourceMap, string(omni.ClusterMachineType), cm.Metadata().ID(), appState.stateClient, ctx, 0)
+			cmID := cm.Metadata().ID()
+			childNode := createResourceNodeFromMap(resourceMap, cmID, string(omni.ClusterMachineType))
+			children = append(children, childNode)
+		}
+	}
+	
+	// Add KubernetesVersion as a child if cluster has a kubernetes_version
+	if kv, ok := node.Resource["kubernetes_version"].(string); ok && kv != "" {
+		kvMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubernetesVersionType, kv, resource.VersionUndefined)
+		kvRes, err := appState.stateClient.Get(ctx, kvMD)
+		if err == nil {
+			resourceMap := resconverter.ToMap(kvRes)
+			childNode := createResourceNodeFromMap(resourceMap, kv, string(omni.KubernetesVersionType))
+			children = append(children, childNode)
+		}
+	}
+	
+	node.Children = children
+	slog.Info("Loaded cluster children", 
+		"cluster_id", clusterID,
+		"total_children", len(children),
+		"machinesets", len(machineSetIDs),
+		"orphaned_clustermachines", len(children)-len(machineSetIDs))
+}
+
+func loadMachineSetChildren(node *TreeNode, appState *AppState, ctx context.Context, machineSetID string) {
+	children := make([]*TreeNode, 0)
+	
+	// Find ClusterMachines for this MachineSet
+	clusterMachines := findClusterMachinesByMachineSet(ctx, machineSetID, appState)
+	for _, resourceMap := range clusterMachines {
+		cmID, _ := extractResourceInfoFromMap(resourceMap)
+		enrichClusterMachineResource(resourceMap, string(omni.ClusterMachineType), cmID, appState.stateClient, ctx, 0)
+		childNode := createResourceNodeFromMap(resourceMap, cmID, string(omni.ClusterMachineType))
+		children = append(children, childNode)
+	}
+	
+	node.Children = children
+	slog.Info("Loaded MachineSet children", "machineset_id", machineSetID, "children_count", len(children))
+}
+
+func loadClusterMachineChildren(node *TreeNode, appState *AppState, ctx context.Context, clusterMachineID string) {
+	children := make([]*TreeNode, 0)
+	
+	// Find the Machine for this ClusterMachine
+	if machineID, ok := node.Resource["machine_id"].(string); ok && machineID != "" {
+		machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
+		machine, err := appState.stateClient.Get(ctx, machineMD)
+		if err == nil {
+			resourceMap := resconverter.ToMap(machine)
+			enrichMachineResource(resourceMap, string(omni.MachineType), machineID, appState.stateClient, ctx, 0)
+			childNode := createResourceNodeFromMap(resourceMap, machineID, string(omni.MachineType))
+			children = append(children, childNode)
+		}
+	}
+	
+	// Find the Cluster for this ClusterMachine (from labels)
+	if labels, ok := node.Resource["labels"].(map[string]interface{}); ok {
+		if clusterID, ok := labels["omni.sidero.dev/cluster"].(string); ok && clusterID != "" {
+			clusterMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterType, clusterID, resource.VersionUndefined)
+			cluster, err := appState.stateClient.Get(ctx, clusterMD)
+			if err == nil {
+				resourceMap := resconverter.ToMap(cluster)
+				childNode := createResourceNodeFromMap(resourceMap, clusterID, string(omni.ClusterType))
+				children = append(children, childNode)
+			}
+		}
+		
+		// Find the MachineSet for this ClusterMachine
+		if machineSetID, ok := labels[labelKeyMachineSet].(string); ok && machineSetID != "" {
+			machineSetMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetType, machineSetID, resource.VersionUndefined)
+			machineSet, err := appState.stateClient.Get(ctx, machineSetMD)
+			if err == nil {
+				resourceMap := resconverter.ToMap(machineSet)
+				childNode := createResourceNodeFromMap(resourceMap, machineSetID, string(omni.MachineSetType))
+				children = append(children, childNode)
+			}
+		}
+	}
+	
+	node.Children = children
+	slog.Info("Loaded ClusterMachine children", "clustermachine_id", clusterMachineID, "children_count", len(children))
+}
+
+func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context, machineID string) {
+	children := make([]*TreeNode, 0)
+	
+	// Find ClusterMachines that use this Machine
+	// ClusterMachine ID is the machine ID
+	clusterMachineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineType, machineID, resource.VersionUndefined)
+	cm, err := appState.stateClient.Get(ctx, clusterMachineMD)
+	if err == nil {
+		resourceMap := resconverter.ToMap(cm)
+		enrichClusterMachineResource(resourceMap, string(omni.ClusterMachineType), machineID, appState.stateClient, ctx, 0)
+		childNode := createResourceNodeFromMap(resourceMap, machineID, string(omni.ClusterMachineType))
+		children = append(children, childNode)
+	}
+	
+	// Find MachineStatus for this Machine (MachineStatus has the same ID as Machine)
+	machineStatusMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineStatusType, machineID, resource.VersionUndefined)
+	ms, err := appState.stateClient.Get(ctx, machineStatusMD)
+	if err == nil {
+		resourceMap := resconverter.ToMap(ms)
+		statusID := fmt.Sprintf("%s-status", machineID)
+		childNode := createResourceNodeFromMap(resourceMap, statusID, string(omni.MachineStatusType))
+		// Set a descriptive label for MachineStatus
+		if hostname, ok := resourceMap["hostname"].(string); ok && hostname != "" {
+			childNode.Label = fmt.Sprintf("MachineStatus (%s)", hostname)
+		} else {
+			childNode.Label = "MachineStatus"
+		}
+		children = append(children, childNode)
+	}
+	
+	node.Children = children
+	slog.Info("Loaded Machine children", "machine_id", machineID, "children_count", len(children))
+}
+
+func loadKubernetesVersionChildren(node *TreeNode, appState *AppState, ctx context.Context, version string) {
+	children := make([]*TreeNode, 0)
+	
+	// Find all resources with this Kubernetes version
+	resources := findResourcesByK8sVersion(ctx, version, appState)
+	for _, resourceMap := range resources {
+		resourceID, resourceType := extractResourceInfoFromMap(resourceMap)
+		enrichMachineResource(resourceMap, resourceType, resourceID, appState.stateClient, ctx, 0)
+		enrichClusterMachineResource(resourceMap, resourceType, resourceID, appState.stateClient, ctx, 0)
+		childNode := createResourceNodeFromMap(resourceMap, resourceID, resourceType)
+		children = append(children, childNode)
+	}
+	
+	node.Children = children
+	slog.Info("Loaded KubernetesVersion children", "version", version, "children_count", len(children))
 }
 
 func createDetailComponents() *DetailComponents {
@@ -268,17 +631,25 @@ func createBurgerMenu(myWindow fyne.Window, appState *AppState, executeQuery fun
 	}
 	sort.Strings(resourceOptions)
 
-	menuItems := make([]*fyne.MenuItem, 0, len(resourceOptions))
+	menuItems := make([]*fyne.MenuItem, 0, len(resourceOptions)+1)
+	burgerMenu := widget.NewButton(fmt.Sprintf("☰ %s", appState.selectedResourceType), nil)
+	
 	for _, name := range resourceOptions {
 		name := name
 		menuItems = append(menuItems, fyne.NewMenuItem(name, func() {
 			appState.selectedResourceType = name
+			burgerMenu.SetText(fmt.Sprintf("☰ %s", name))
 			executeQuery()
 		}))
 	}
 
+	// Add Settings menu item
+	menuItems = append(menuItems, fyne.NewMenuItemSeparator())
+	menuItems = append(menuItems, fyne.NewMenuItem("Settings", func() {
+		showSettingsPage(myWindow)
+	}))
+
 	menu := fyne.NewMenu(i18n.T("resource.type.menu"), menuItems...)
-	burgerMenu := widget.NewButton(fmt.Sprintf("☰ %s", appState.selectedResourceType), nil)
 	
 	burgerMenu.OnTapped = func() {
 		popup := widget.NewPopUpMenu(menu, fyne.CurrentApp().Driver().CanvasForObject(burgerMenu))
@@ -313,6 +684,265 @@ func createLanguageSelector(appState *AppState, refreshUI func()) *widget.Select
 	return langSelect
 }
 
+func showSettingsPage(parentWindow fyne.Window) {
+	// Always load settings without ignoring env for the settings page
+	// The user can see what's currently configured
+	settings, err := omniclient.LoadSettings(false)
+	if err != nil {
+		slog.Error("Failed to load settings", "error", err)
+		settings = &omniclient.Settings{}
+	}
+
+	// Create settings window
+	settingsWindow := fyne.CurrentApp().NewWindow("Settings")
+	settingsWindow.Resize(fyne.NewSize(500, 400))
+	settingsWindow.CenterOnScreen()
+
+	// Endpoint input
+	endpointLabel := widget.NewLabel("Omni Endpoint:")
+	endpointEntry := widget.NewEntry()
+	if settings.Endpoint != "" {
+		endpointEntry.SetText(settings.Endpoint)
+	} else {
+		endpointEntry.SetText(os.Getenv("OMNI_ENDPOINT"))
+	}
+	endpointEntry.SetPlaceHolder("https://omni.example.com")
+
+	// Auth method selection
+	authLabel := widget.NewLabel("Authentication Method:")
+	authSelect := widget.NewSelect([]string{"Service Account", "OIDC"}, func(selected string) {
+		// Selection handler
+	})
+	
+	// Set current selection (check without ignoring env for display purposes)
+	currentAuth := omniclient.GetCurrentAuthMethod(false)
+	if currentAuth == omniclient.AuthMethodOIDC {
+		authSelect.SetSelected("OIDC")
+	} else {
+		authSelect.SetSelected("Service Account")
+	}
+
+	// Service Account fields
+	serviceAccountLabel := widget.NewLabel("Service Account Key:")
+	serviceAccountEntry := widget.NewEntry()
+	serviceAccountEntry.SetPlaceHolder("Base64 encoded service account key")
+	serviceAccountEntry.Password = true
+	// Load from settings file first, then fall back to environment
+	if settings.ServiceAccount != "" {
+		serviceAccountEntry.SetText(settings.ServiceAccount)
+	} else if os.Getenv("OMNI_SERVICE_ACCOUNT") != "" {
+		serviceAccountEntry.SetText(os.Getenv("OMNI_SERVICE_ACCOUNT"))
+	} else if os.Getenv("OMNI_SERVICE_ACCOUNT_KEY") != "" {
+		serviceAccountEntry.SetText(os.Getenv("OMNI_SERVICE_ACCOUNT_KEY"))
+	}
+
+	// OIDC fields
+	oidcIssuerLabel := widget.NewLabel("OIDC Issuer URL:")
+	oidcIssuerEntry := widget.NewEntry()
+	oidcIssuerEntry.SetPlaceHolder("https://oidc-provider.com (optional, auto-derived from endpoint)")
+	// Load from settings file first, then fall back to environment
+	if settings.OIDCIssuerURL != "" {
+		oidcIssuerEntry.SetText(settings.OIDCIssuerURL)
+	} else if os.Getenv("OMNI_OIDC_ISSUER_URL") != "" {
+		oidcIssuerEntry.SetText(os.Getenv("OMNI_OIDC_ISSUER_URL"))
+	}
+
+	oidcClientIDLabel := widget.NewLabel("OIDC Client ID:")
+	oidcClientIDEntry := widget.NewEntry()
+	oidcClientIDEntry.SetPlaceHolder("your-client-id")
+	// Load from settings file first, then fall back to environment
+	if settings.OIDCClientID != "" {
+		oidcClientIDEntry.SetText(settings.OIDCClientID)
+	} else if os.Getenv("OMNI_OIDC_CLIENT_ID") != "" {
+		oidcClientIDEntry.SetText(os.Getenv("OMNI_OIDC_CLIENT_ID"))
+	}
+
+	oidcClientSecretLabel := widget.NewLabel("OIDC Client Secret:")
+	oidcClientSecretEntry := widget.NewEntry()
+	oidcClientSecretEntry.SetPlaceHolder("your-client-secret")
+	oidcClientSecretEntry.Password = true
+	// Load from settings file first, then fall back to environment
+	if settings.OIDCClientSecret != "" {
+		oidcClientSecretEntry.SetText(settings.OIDCClientSecret)
+	} else if os.Getenv("OMNI_OIDC_CLIENT_SECRET") != "" {
+		oidcClientSecretEntry.SetText(os.Getenv("OMNI_OIDC_CLIENT_SECRET"))
+	}
+
+	// Container for service account fields
+	serviceAccountContainer := container.NewVBox(
+		serviceAccountLabel,
+		serviceAccountEntry,
+	)
+
+	// Container for OIDC fields
+	oidcContainer := container.NewVBox(
+		oidcIssuerLabel,
+		oidcIssuerEntry,
+		oidcClientIDLabel,
+		oidcClientIDEntry,
+		oidcClientSecretLabel,
+		oidcClientSecretEntry,
+	)
+
+	// Show/hide fields based on auth method selection
+	updateAuthFields := func(selected string) {
+		if selected == "OIDC" {
+			serviceAccountContainer.Hide()
+			oidcContainer.Show()
+		} else {
+			serviceAccountContainer.Show()
+			oidcContainer.Hide()
+		}
+	}
+	authSelect.OnChanged = updateAuthFields
+	updateAuthFields(authSelect.Selected) // Initial state
+
+	// Save button
+	saveButton := widget.NewButton("Save", func() {
+		// Save settings
+		newSettings := &omniclient.Settings{
+			Endpoint: endpointEntry.Text,
+		}
+		
+		if authSelect.Selected == "OIDC" {
+			newSettings.AuthMethod = "oidc"
+			newSettings.OIDCIssuerURL = oidcIssuerEntry.Text
+			newSettings.OIDCClientID = oidcClientIDEntry.Text
+			newSettings.OIDCClientSecret = oidcClientSecretEntry.Text
+			// Clear service account when using OIDC
+			newSettings.ServiceAccount = ""
+		} else {
+			newSettings.AuthMethod = "service_account"
+			newSettings.ServiceAccount = serviceAccountEntry.Text
+			// Clear OIDC credentials when using service account
+			newSettings.OIDCIssuerURL = ""
+			newSettings.OIDCClientID = ""
+			newSettings.OIDCClientSecret = ""
+		}
+
+		if err := omniclient.SaveSettings(newSettings); err != nil {
+			slog.Error("Failed to save settings", "error", err)
+			errorDialog := widget.NewModalPopUp(
+				widget.NewLabel(fmt.Sprintf("Failed to save settings: %v", err)),
+				settingsWindow.Canvas(),
+			)
+			errorDialog.Resize(fyne.NewSize(300, 100))
+			errorDialog.Show()
+			return
+		}
+
+		// Show restart dialog
+		showRestartDialog(settingsWindow, parentWindow)
+	})
+
+	// Cancel button
+	cancelButton := widget.NewButton("Cancel", func() {
+		settingsWindow.Close()
+	})
+
+	// Layout
+	content := container.NewVBox(
+		widget.NewLabel("Authentication Settings"),
+		widget.NewSeparator(),
+		endpointLabel,
+		endpointEntry,
+		widget.NewSeparator(),
+		authLabel,
+		authSelect,
+		widget.NewSeparator(),
+		serviceAccountContainer,
+		oidcContainer,
+		widget.NewSeparator(),
+		container.NewHBox(cancelButton, saveButton),
+	)
+
+	scrollContent := container.NewScroll(content)
+	settingsWindow.SetContent(scrollContent)
+	settingsWindow.Show()
+}
+
+// showRestartDialog displays a dialog asking if the user wants to restart the application
+func showRestartDialog(settingsWindow fyne.Window, parentWindow fyne.Window) {
+	message := widget.NewLabel("Settings saved!\n\nRestart the application now to apply changes?")
+	message.Wrapping = fyne.TextWrapWord
+	
+	var dialog *widget.PopUp
+	
+	restartButton := widget.NewButton("Restart Now", func() {
+		if dialog != nil {
+			dialog.Hide()
+		}
+		restartApplication(parentWindow)
+	})
+	
+	laterButton := widget.NewButton("Later", func() {
+		if dialog != nil {
+			dialog.Hide()
+		}
+	})
+	
+	buttonContainer := container.NewHBox(laterButton, restartButton)
+	dialogContent := container.NewVBox(
+		message,
+		widget.NewSeparator(),
+		buttonContainer,
+	)
+	
+	dialog = widget.NewModalPopUp(
+		dialogContent,
+		settingsWindow.Canvas(),
+	)
+	dialog.Resize(fyne.NewSize(350, 120))
+	dialog.Show()
+}
+
+// restartApplication restarts the application with the same command-line arguments
+func restartApplication(parentWindow fyne.Window) {
+	slog.Info("Restarting application...")
+	
+	// Get the executable path
+	executable, err := os.Executable()
+	if err != nil {
+		slog.Error("Failed to get executable path", "error", err)
+		// Fallback: try to get from os.Args[0]
+		executable = os.Args[0]
+		// If it's a relative path, make it absolute
+		if !filepath.IsAbs(executable) {
+			wd, err := os.Getwd()
+			if err == nil {
+				executable = filepath.Join(wd, executable)
+			}
+		}
+	}
+	
+	// Get current command-line arguments (excluding program name)
+	args := os.Args[1:]
+	
+	// Create command to restart
+	cmd := exec.Command(executable, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	
+	// Start the new process
+	if err := cmd.Start(); err != nil {
+		slog.Error("Failed to restart application", "error", err)
+		// Show error to user
+		errorDialog := widget.NewModalPopUp(
+			widget.NewLabel(fmt.Sprintf("Failed to restart: %v\n\nPlease restart manually.", err)),
+			parentWindow.Canvas(),
+		)
+		errorDialog.Resize(fyne.NewSize(300, 100))
+		errorDialog.Show()
+		return
+	}
+	
+	// Close the current application
+	slog.Info("New process started, exiting current instance")
+	parentWindow.Close()
+	os.Exit(0)
+}
+
 func createMainLayout(burgerMenu *widget.Button, resourceIDInput *widget.Entry, resourceTree *widget.Tree, detailComponents *DetailComponents, statusLabel *widget.Label, langSelect *widget.Select) *container.Split {
 	topBar := container.NewBorder(nil, nil, nil, langSelect, burgerMenu)
 	middleBar := container.NewBorder(nil, nil, widget.NewLabel(i18n.T("resource.id.label")), nil, resourceIDInput)
@@ -320,7 +950,12 @@ func createMainLayout(burgerMenu *widget.Button, resourceIDInput *widget.Entry, 
 	infoLabel := widget.NewLabel(i18n.T("app.connected", os.Getenv("OMNI_ENDPOINT"))) //nolint
 	infoLabel.Wrapping = fyne.TextWrapWord
 
-	leftPane := container.NewBorder(topBar, middleBar, nil, nil, resourceTree)
+	// Wrap tree in scroll container to ensure it's visible
+	// Add a minimum content to ensure tree is visible even when empty
+	treeContainer := container.NewBorder(nil, nil, nil, nil, resourceTree)
+	treeScroll := container.NewScroll(treeContainer)
+	treeScroll.SetMinSize(fyne.NewSize(300, 400))
+	leftPane := container.NewBorder(topBar, middleBar, nil, nil, treeScroll)
 	
 	detailScroll := container.NewScroll(container.NewVBox(
 		detailComponents.Title,
@@ -378,8 +1013,43 @@ func executeListQuery(ctx context.Context, resourceType resource.Type, appState 
 		resources = append(resources, resconverter.ToMap(item))
 	}
 
-	appState.treeRoot.Children = buildResourceNodes(resources, stateClient, ctx)
-	appState.resourceTree.Refresh()
+	// Clear existing nodes and rebuild
+	nodeMap = make(map[widget.TreeNodeID]*TreeNode)
+	
+	// Create root node with children
+	root := &TreeNode{
+		ID:       "",
+		Type:     "root",
+		Label:    "",
+		Resource: nil,
+		Children: []*TreeNode{},
+	}
+	
+	if len(resources) > 0 {
+		root.Children = buildResourceNodes(resources, stateClient, ctx)
+	} else {
+		root.Children = []*TreeNode{
+			{
+				ID:       "no-resources",
+				Type:     "placeholder",
+				Label:    "No resources found",
+				Children: []*TreeNode{},
+			},
+		}
+	}
+	
+	// Update appState and global root
+	appState.treeRoot = root
+	setRootNode(root)
+	addNodeToMap(root)
+	
+	// Refresh tree display
+	if appState.resourceTree != nil {
+		appState.resourceTree.Refresh()
+		appState.resourceTree.OpenBranch("")
+		appState.resourceTree.Refresh()
+	}
+	
 	statusLabel.SetText(i18n.T("resource.success", fmt.Sprintf("%d resources", len(resources))))
 }
 
@@ -392,24 +1062,54 @@ func executeGetQuery(ctx context.Context, resourceType resource.Type, resourceID
 	}
 
 	resourceMap := resconverter.ToMap(item)
-	appState.treeRoot.Children = []*TreeNode{
-		{
-			ID:       fmt.Sprintf("%s-%s", resourceType, resourceID),
-			Type:     string(resourceType),
-			Label:    formatResourceLabel(resourceMap),
-			Resource: resourceMap,
-			Children: []*TreeNode{},
+	nodeID := fmt.Sprintf("%s-%s", resourceType, resourceID)
+	
+	// Clear and rebuild
+	nodeMap = make(map[widget.TreeNodeID]*TreeNode)
+	
+	root := &TreeNode{
+		ID:       "",
+		Type:     "root",
+		Label:    "",
+		Resource: nil,
+		Children: []*TreeNode{
+			{
+				ID:       nodeID,
+				Type:     string(resourceType),
+				Label:    formatResourceLabel(resourceMap),
+				Resource: resourceMap,
+				Children: []*TreeNode{},
+			},
 		},
 	}
-	appState.resourceTree.Refresh()
+	
+	appState.treeRoot = root
+	setRootNode(root)
+	addNodeToMap(root)
+	
+	if appState.resourceTree != nil {
+		appState.resourceTree.Refresh()
+		appState.resourceTree.OpenBranch("")
+		appState.resourceTree.Refresh()
+	}
 	statusLabel.SetText(i18n.T("resource.success", resourceID))
 }
 
 func handleQueryError(err error, appState *AppState, statusLabel *widget.Label) {
-	// Format directive is in translation file: "resource.error" = "Error: %v"
 	statusLabel.SetText(i18n.T("resource.error", err)) //nolint
-	appState.treeRoot.Children = []*TreeNode{}
-	appState.resourceTree.Refresh()
+	nodeMap = make(map[widget.TreeNodeID]*TreeNode)
+	root := &TreeNode{
+		ID:       "",
+		Type:     "root",
+		Label:    "",
+		Resource: nil,
+		Children: []*TreeNode{},
+	}
+	appState.treeRoot = root
+	setRootNode(root)
+	if appState.resourceTree != nil {
+		appState.resourceTree.Refresh()
+	}
 }
 
 func setupResourceIDAutoQuery(resourceIDInput *widget.Entry, appState *AppState, executeQuery func()) {
@@ -426,6 +1126,8 @@ func buildResourceNodes(resources []map[string]interface{}, stateClient state.St
 		enrichClusterMachineResource(resourceMap, resourceType, resourceID, stateClient, ctx, 0)
 		node := createResourceNodeFromMap(resourceMap, resourceID, resourceType)
 		nodes = append(nodes, node)
+		// Add to map immediately
+		addNodeToMap(node)
 	}
 	return nodes
 }
@@ -719,7 +1421,16 @@ func loadMachinesByMachineSet(machineSetID string, appState *AppState) {
 		return
 	}
 
-	appState.treeRoot.Children = buildResourceNodes(resources, appState.stateClient, ctx)
+	root := &TreeNode{
+		ID:       "",
+		Type:     "root",
+		Label:    "",
+		Resource: nil,
+		Children: buildResourceNodes(resources, appState.stateClient, ctx),
+	}
+	appState.treeRoot = root
+	setRootNode(root)
+	addNodeToMap(root)
 	appState.resourceTree.Refresh()
 	// Format directives are in translation file: "machineset.found" = "Found %d machines in machine set %s"
 	appState.statusLabel.SetText(i18n.T("machineset.found", len(resources), machineSetID)) //nolint
@@ -762,7 +1473,16 @@ func loadResourcesByK8sVersion(version string, appState *AppState) {
 		return
 	}
 
-	appState.treeRoot.Children = buildResourceNodes(resources, appState.stateClient, ctx)
+	root := &TreeNode{
+		ID:       "",
+		Type:     "root",
+		Label:    "",
+		Resource: nil,
+		Children: buildResourceNodes(resources, appState.stateClient, ctx),
+	}
+	appState.treeRoot = root
+	setRootNode(root)
+	addNodeToMap(root)
 	appState.resourceTree.Refresh()
 	// Format directives are in translation file: "k8s.version.found" = "Found %d resources with Kubernetes version %s"
 	appState.statusLabel.SetText(i18n.T("k8s.version.found", len(resources), version)) //nolint
@@ -818,19 +1538,56 @@ func findClusterMachinesByK8sVersion(ctx context.Context, version string, appSta
 }
 
 func main() {
+	// Parse command-line flags
+	ignoreEnv := flag.Bool("ignore-env", false, "Ignore environment variables and use only settings file")
+	flag.Parse()
+	
+	// Initialize structured logger with JSON output to stderr
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+		AddSource: true,
+	}))
+	slog.SetDefault(logger)
+	
+	slog.Info("Starting Omni GUI Application", "version", Version, "ignoreEnv", *ignoreEnv)
+	
+	slog.Info("Initializing i18n", "language", "en")
 	if err := i18n.Init("en"); err != nil {
-		log.Printf("Failed to initialize i18n: %v", err)
+		slog.Error("Failed to initialize i18n", "error", err)
+		slog.Info("Continuing without i18n")
+		// Continue anyway - i18n.T will return the key if translations fail
+	} else {
+		slog.Info("i18n initialized successfully")
 	}
 
+	slog.Info("Creating Fyne application")
 	myApp := app.New()
-	myWindow := myApp.NewWindow(i18n.T("app.title"))
-	myWindow.Resize(fyne.NewSize(1400, 900))
+	slog.Info("Fyne app created")
+	
+	appTitle := i18n.T("app.title")
+	slog.Info("App title retrieved", "title", appTitle)
+	
+	slog.Info("Creating window")
+	myWindow := myApp.NewWindow(appTitle)
+	slog.Info("Window created")
+	
+	windowSize := fyne.NewSize(1400, 900)
+	myWindow.Resize(windowSize)
+	slog.Info("Window resized", "width", windowSize.Width, "height", windowSize.Height)
 
-	omniClient, appState := initializeApp(myWindow)
+	slog.Info("Initializing Omni client")
+	omniClient, appState := initializeApp(myWindow, *ignoreEnv)
 	if omniClient == nil {
+		slog.Error("Omni client initialization failed")
+		slog.Info("Showing error window and starting event loop")
+		myWindow.CenterOnScreen()
+		myWindow.Show()
+		myWindow.ShowAndRun()
+		slog.Info("Error window closed, exiting")
 		return
 	}
 	defer omniClient.Close()
+	slog.Info("Omni client initialized successfully")
 
 	appState.selectedResourceType = i18n.T("resource.cluster")
 
@@ -857,7 +1614,7 @@ func main() {
 
 		resourceIDInput.SetPlaceHolder(i18n.T("resource.id.placeholder"))
 		statusLabel.SetText(i18n.T("app.ready"))
-		appState.treeRoot.Label = i18n.T("tree.root")
+		// Root label is not displayed (empty string ID), so no need to update it
 		if appState.detailTitle != nil {
 			appState.detailTitle.SetText(i18n.T("tree.select_resource"))
 		}
@@ -868,7 +1625,37 @@ func main() {
 	mainContent := createMainLayout(burgerMenu, resourceIDInput, resourceTree, detailComponents, statusLabel, langSelect)
 
 	myWindow.SetContent(mainContent)
+	slog.Info("Window content set")
 
+	// Center the window on screen
+	myWindow.CenterOnScreen()
+	
+	slog.Info("Executing initial query")
 	executeQuery()
+	slog.Info("Initial query executed")
+	
+	// Ensure tree is opened and visible after initial query
+	if appState.resourceTree != nil {
+		slog.Info("Opening root branch and refreshing tree")
+		appState.resourceTree.OpenBranch("")
+		appState.resourceTree.Refresh()
+		slog.Info("Tree opened and refreshed")
+	} else {
+		slog.Warn("resourceTree is nil after initial query")
+	}
+	
+	slog.Info("Showing window and starting event loop")
+	if myWindow.Content() != nil {
+		contentSize := myWindow.Content().Size()
+		slog.Info("Window has content", "width", contentSize.Width, "height", contentSize.Height)
+	} else {
+		slog.Warn("Window has no content")
+	}
+	myWindow.Show()
+	slog.Info("Window.Show() called")
+	myWindow.RequestFocus()
+	slog.Info("RequestFocus() called")
+	slog.Info("Now calling ShowAndRun() - this will block until window closes")
 	myWindow.ShowAndRun()
+	slog.Info("Application exited")
 }

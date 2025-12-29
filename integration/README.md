@@ -142,6 +142,6 @@ If tests timeout:
 ## Related Documentation
 
 - 📖 [README.md](../README.md) - Main project documentation
-- 📋 [RESOURCES.md](../RESOURCES.md) - Available Omni resources
-- 📊 [TEST_COVERAGE.md](../TEST_COVERAGE.md) - Unit test coverage report
-- 🔧 [MACHINE_ENHANCEMENTS.md](../MACHINE_ENHANCEMENTS.md) - Machine endpoint enhancements
+- 📋 [RESOURCES.md](../docs/RESOURCES.md) - Available Omni resources
+- 📊 [TEST_COVERAGE.md](../docs/TEST_COVERAGE.md) - Unit test coverage report
+- 🔧 [MACHINE_ENHANCEMENTS.md](../docs/MACHINE_ENHANCEMENTS.md) - Machine endpoint enhancements

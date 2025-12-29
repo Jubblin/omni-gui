@@ -4,11 +4,13 @@ go 1.25.5
 
 require (
 	fyne.io/fyne/v2 v2.7.1
+	github.com/coreos/go-oidc/v3 v3.10.0
 	github.com/cosi-project/runtime v1.13.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/siderolabs/omni/client v1.4.0-beta.1.0.20251218113632-d5f6ebf33a5d
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.16.6
+	golang.org/x/oauth2 v0.33.0
 	google.golang.org/protobuf v1.36.10
 )
 
@@ -43,6 +45,7 @@ require (
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20240506104042-037f3cc74f2a // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-openapi/jsonpointer v0.22.4 // indirect
 	github.com/go-openapi/jsonreference v0.21.4 // indirect
 	github.com/go-openapi/spec v0.22.2 // indirect
@@ -129,6 +132,6 @@ require (
 	golang.org/x/tools v0.40.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251111163417-95abcf5c77ba // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251111163417-95abcf5c77ba // indirect
-	google.golang.org/grpc v1.77.0 // indirect
+	google.golang.org/grpc v1.77.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
