@@ -65,6 +65,33 @@
   "detail.upgrade_status": "Upgrade Status",
   "detail.labels": "Labels",
   
+  "link.cluster.status": "Status",
+  "link.cluster.metrics": "Metrics",
+  "link.cluster.bootstrap": "Bootstrap",
+  "link.cluster.kubeconfig": "Kubeconfig",
+  "link.cluster.k8s_upgrade": "Kubernetes Upgrade",
+  "link.cluster.talos_upgrade": "Talos Upgrade",
+  "link.cluster.endpoints": "Endpoints",
+  "link.cluster.k8s_status": "Kubernetes Status",
+  "link.cluster.controlplane": "Control Plane Status",
+  "link.cluster.diagnostics": "Diagnostics",
+  "link.cluster.destroy": "Destroy Status",
+  "link.cluster.workload_proxy": "Workload Proxy Status",
+  
+  "link.machine.labels": "Labels",
+  "link.machine.extensions": "Extensions",
+  "link.machine.upgrade_status": "Upgrade Status",
+  "link.machine.metrics": "Metrics",
+  "link.machine.config_diff": "Config Diff",
+  
+  "link.machineset.status": "Status",
+  "link.machineset.destroy": "Destroy Status",
+  
+  "link.clustermachine.status": "Status",
+  "link.clustermachine.config_status": "Config Status",
+  "link.clustermachine.talos_version": "Talos Version",
+  "link.clustermachine.config": "Config",
+  
   "language.select": "Language",
   "language.english": "English",
   "language.spanish": "Spanish",

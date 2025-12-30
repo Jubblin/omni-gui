@@ -12,13 +12,12 @@ import (
 // This is a manual test script to verify OIDC token acquisition
 // Run with: go run cmd/test-oidc/main.go
 
-func main() {
-	fmt.Println("=== OIDC Manual Test ===\n")
-
-	// Check environment variables
+// checkEnvironmentVariables checks and validates required OIDC environment variables
+func checkEnvironmentVariables() (string, string, string) {
 	issuerURL := os.Getenv("OMNI_OIDC_ISSUER_URL")
 	clientID := os.Getenv("OMNI_OIDC_CLIENT_ID")
 	clientSecret := os.Getenv("OMNI_OIDC_CLIENT_SECRET")
+	// checkov:skip=CKV_SECRET_6: BASE64 High Entropy string expected
 
 	if issuerURL == "" || clientID == "" || clientSecret == "" {
 		fmt.Println("Error: OIDC environment variables not set")
@@ -38,8 +37,11 @@ func main() {
 	fmt.Printf("  Client ID: %s\n", clientID)
 	fmt.Printf("  Client Secret: %s\n", maskSecret(clientSecret))
 	fmt.Println()
+	return issuerURL, clientID, clientSecret
+}
 
-	// Test 1: Configuration parsing
+// testConfigurationParsing tests OIDC configuration parsing
+func testConfigurationParsing() *client.OIDCConfig {
 	fmt.Println("Test 1: Configuration Parsing")
 	config := client.GetOIDCConfig()
 	if config == nil {
@@ -49,8 +51,11 @@ func main() {
 	fmt.Printf("   Flow: %s\n", config.Flow)
 	fmt.Printf("   Scopes: %v\n", config.Scopes)
 	fmt.Println()
+	return config
+}
 
-	// Test 2: OIDC Provider Creation
+// testOIDCProviderCreation tests OIDC provider creation
+func testOIDCProviderCreation(config *client.OIDCConfig) client.OIDCTokenProvider {
 	fmt.Println("Test 2: OIDC Provider Creation")
 	oidcProvider, err := client.NewOIDCProvider(config)
 	if err != nil {
@@ -58,10 +63,12 @@ func main() {
 	}
 	fmt.Println("✅ OIDC provider created successfully")
 	fmt.Println()
+	return oidcProvider
+}
 
-	// Test 3: Token Acquisition
+// testTokenAcquisition tests token acquisition and displays token info
+func testTokenAcquisition(ctx context.Context, oidcProvider client.OIDCTokenProvider) string {
 	fmt.Println("Test 3: Token Acquisition")
-	ctx := context.Background()
 	token, err := oidcProvider.GetToken(ctx)
 	if err != nil {
 		log.Fatalf("❌ Failed to get token: %v\n", err)
@@ -74,44 +81,73 @@ func main() {
 		fmt.Printf("   Token: %s\n", token)
 	}
 	fmt.Println()
+	return token
+}
 
-	// Test 4: Token Caching (second call should use cache)
+// testTokenCaching tests token caching functionality
+func testTokenCaching(ctx context.Context, oidcProvider client.OIDCTokenProvider, firstToken string) {
 	fmt.Println("Test 4: Token Caching")
 	token2, err := oidcProvider.GetToken(ctx)
 	if err != nil {
 		log.Fatalf("❌ Failed to get cached token: %v\n", err)
 	}
-	if token == token2 {
+	if firstToken == token2 {
 		fmt.Println("✅ Token caching works (same token returned)")
 	} else {
 		fmt.Println("⚠️  Different token returned (may have been refreshed)")
 	}
 	fmt.Println()
+}
 
-	// Test 5: Full Client Integration
+// testFullClientIntegration tests full client integration with OIDC
+func testFullClientIntegration() {
 	fmt.Println("Test 5: Full Client Integration")
 	omniEndpoint := os.Getenv("OMNI_ENDPOINT")
 	if omniEndpoint == "" {
 		fmt.Println("⚠️  Skipping: OMNI_ENDPOINT not set")
-	} else {
-		omniClient, err := client.NewOmniClient(false)
-		if err != nil {
-			log.Fatalf("❌ Failed to create Omni client: %v\n", err)
-		}
-		fmt.Println("✅ Omni client created with OIDC authentication")
-		fmt.Printf("   Endpoint: %s\n", omniClient.Endpoint())
-		
-		// Verify OIDC provider is stored
-		storedProvider := client.GetOIDCProvider()
-		if storedProvider != nil {
-			fmt.Println("✅ OIDC provider is accessible via GetOIDCProvider()")
-		} else {
-			fmt.Println("⚠️  OIDC provider not accessible via GetOIDCProvider()")
-		}
-		
-		omniClient.Close()
+		return
 	}
+	
+	omniClient, err := client.NewOmniClient(false)
+	if err != nil {
+		log.Fatalf("❌ Failed to create Omni client: %v\n", err)
+	}
+	fmt.Println("✅ Omni client created with OIDC authentication")
+	fmt.Printf("   Endpoint: %s\n", omniClient.Endpoint())
+	
+	// Verify OIDC provider is stored
+	storedProvider := client.GetOIDCProvider()
+	if storedProvider != nil {
+		fmt.Println("✅ OIDC provider is accessible via GetOIDCProvider()")
+	} else {
+		fmt.Println("⚠️  OIDC provider not accessible via GetOIDCProvider()")
+	}
+	
+	omniClient.Close()
 	fmt.Println()
+}
+
+func main() {
+	fmt.Println("=== OIDC Manual Test ===")
+
+	// Check environment variables
+	_, _, _ = checkEnvironmentVariables()
+
+	// Test 1: Configuration parsing
+	config := testConfigurationParsing()
+
+	// Test 2: OIDC Provider Creation
+	oidcProvider := testOIDCProviderCreation(config)
+
+	// Test 3: Token Acquisition
+	ctx := context.Background()
+	token := testTokenAcquisition(ctx, oidcProvider)
+
+	// Test 4: Token Caching
+	testTokenCaching(ctx, oidcProvider, token)
+
+	// Test 5: Full Client Integration
+	testFullClientIntegration()
 
 	fmt.Println("=== All Tests Passed! ===")
 	fmt.Println("\nOIDC authentication is working correctly.")

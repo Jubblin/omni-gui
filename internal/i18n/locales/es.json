@@ -65,6 +65,33 @@
   "detail.upgrade_status": "Estado de Actualización",
   "detail.labels": "Etiquetas",
   
+  "link.cluster.status": "Estado",
+  "link.cluster.metrics": "Métricas",
+  "link.cluster.bootstrap": "Bootstrap",
+  "link.cluster.kubeconfig": "Kubeconfig",
+  "link.cluster.k8s_upgrade": "Actualización de Kubernetes",
+  "link.cluster.talos_upgrade": "Actualización de Talos",
+  "link.cluster.endpoints": "Endpoints",
+  "link.cluster.k8s_status": "Estado de Kubernetes",
+  "link.cluster.controlplane": "Estado del Plano de Control",
+  "link.cluster.diagnostics": "Diagnósticos",
+  "link.cluster.destroy": "Estado de Destrucción",
+  "link.cluster.workload_proxy": "Estado del Proxy de Carga de Trabajo",
+  
+  "link.machine.labels": "Etiquetas",
+  "link.machine.extensions": "Extensiones",
+  "link.machine.upgrade_status": "Estado de Actualización",
+  "link.machine.metrics": "Métricas",
+  "link.machine.config_diff": "Diferencia de Configuración",
+  
+  "link.machineset.status": "Estado",
+  "link.machineset.destroy": "Estado de Destrucción",
+  
+  "link.clustermachine.status": "Estado",
+  "link.clustermachine.config_status": "Estado de Configuración",
+  "link.clustermachine.talos_version": "Versión de Talos",
+  "link.clustermachine.config": "Configuración",
+  
   "language.select": "Idioma",
   "language.english": "Inglés",
   "language.spanish": "Español",

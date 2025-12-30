@@ -65,6 +65,33 @@
   "detail.upgrade_status": "Statut de Mise à Niveau",
   "detail.labels": "Étiquettes",
   
+  "link.cluster.status": "Statut",
+  "link.cluster.metrics": "Métriques",
+  "link.cluster.bootstrap": "Bootstrap",
+  "link.cluster.kubeconfig": "Kubeconfig",
+  "link.cluster.k8s_upgrade": "Mise à Niveau Kubernetes",
+  "link.cluster.talos_upgrade": "Mise à Niveau Talos",
+  "link.cluster.endpoints": "Points de Terminaison",
+  "link.cluster.k8s_status": "Statut Kubernetes",
+  "link.cluster.controlplane": "Statut du Plan de Contrôle",
+  "link.cluster.diagnostics": "Diagnostics",
+  "link.cluster.destroy": "Statut de Destruction",
+  "link.cluster.workload_proxy": "Statut du Proxy de Charge de Travail",
+  
+  "link.machine.labels": "Étiquettes",
+  "link.machine.extensions": "Extensions",
+  "link.machine.upgrade_status": "Statut de Mise à Niveau",
+  "link.machine.metrics": "Métriques",
+  "link.machine.config_diff": "Différence de Configuration",
+  
+  "link.machineset.status": "Statut",
+  "link.machineset.destroy": "Statut de Destruction",
+  
+  "link.clustermachine.status": "Statut",
+  "link.clustermachine.config_status": "Statut de Configuration",
+  "link.clustermachine.talos_version": "Version Talos",
+  "link.clustermachine.config": "Configuration",
+  
   "language.select": "Langue",
   "language.english": "Anglais",
   "language.spanish": "Espagnol",
