@@ -89,37 +89,46 @@ MachineSets (resource-type-folder)
 ## Key Features
 
 ### 1. Lazy Loading
+
 - Resources are loaded on-demand when a branch is expanded.
 - This improves initial load time and reduces memory usage.
 
 ### 2. Folder Grouping
+
 - **Clusters**: Grouped under a "Clusters" folder when listing all clusters.
 - **MachineSets**: Grouped under a "MachineSets" folder, sorted alphabetically by name.
 - **Machines**: Grouped under a "Machines" folder when listing all machines.
 
 ### 3. Link Nodes
+
 Resource-specific actions appear as clickable leaf nodes under each resource:
+
 - **Clusters**: Status, Metrics, Bootstrap, Kubeconfig, Kubernetes Upgrade, Talos Upgrade, Endpoints, Kubernetes Status, Control Plane Status, Diagnostics, Destroy Status, Workload Proxy Status
 - **Machines**: Labels, Extensions, Upgrade Status, Metrics, Config Diff
 - **MachineSets**: Status, Destroy Status
 - **ClusterMachines**: Status, Config Status, Talos Version, Config
 
 ### 4. Reverse Lookups
+
 The tree supports bidirectional navigation:
+
 - **ClusterMachine → Machine**: Via `machine_id` field
 - **Machine → ClusterMachine**: Since ClusterMachine ID equals Machine ID
 - **ClusterMachine → Cluster**: From `omni.sidero.dev/cluster` label
 - **ClusterMachine → MachineSet**: From `omni.sidero.dev/machine-set` label
 
 ### 5. Orphaned Resources
+
 - ClusterMachines that don't belong to any MachineSet are shown directly under their Cluster.
 - This makes it easy to identify machines that aren't part of a MachineSet.
 
 ### 6. Related Resources
+
 - KubernetesVersion resources appear under Clusters when the cluster has a `kubernetes_version` field.
 - MachineStatus appears under Machines.
 
 ### 7. Refresh Functionality
+
 - The burger menu (☰ Menu) includes a "Refresh" option that rebuilds the internal tree data structure.
 - When selected, it:
   - Clears the existing node map
@@ -153,6 +162,7 @@ The tree supports bidirectional navigation:
 ### Resource Relationships
 
 The hierarchy reflects the actual API relationships:
+
 - Clusters contain MachineSets (via `omni.sidero.dev/cluster` label)
 - MachineSets contain ClusterMachines (via `omni.sidero.dev/machine-set` label)
 - ClusterMachines reference Machines (via `machine_id` field)
