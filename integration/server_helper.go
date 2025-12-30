@@ -24,7 +24,7 @@ type ServerInstance struct {
 // StartTestServer starts the API server for testing
 func StartTestServer(ctx context.Context) (*ServerInstance, error) {
 	// Initialize Omni client
-	client, err := omniclient.NewOmniClient()
+	client, err := omniclient.NewOmniClient(false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Omni client: %w", err)
 	}

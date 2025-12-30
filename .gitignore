@@ -8,7 +8,8 @@
 *.so
 *.dylib
 bin/*
-omni-api
+*/omni-api
+*/omni-gui
 
 # Test binary, built with `go test -c`
 *.test
@@ -37,4 +38,6 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# Mac specific files
 .DS_Store
+omni-gui

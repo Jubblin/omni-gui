@@ -94,7 +94,7 @@ func main() {
 	if omniEndpoint == "" {
 		fmt.Println("⚠️  Skipping: OMNI_ENDPOINT not set")
 	} else {
-		omniClient, err := client.NewOmniClient()
+		omniClient, err := client.NewOmniClient(false)
 		if err != nil {
 			log.Fatalf("❌ Failed to create Omni client: %v\n", err)
 		}

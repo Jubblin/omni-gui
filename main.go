@@ -60,7 +60,7 @@ type AppState struct {
 	resourceIDInput          *widget.Entry
 	statusLabel              *widget.Label
 	detailTitle              *widget.Label
-	detailText               *widget.RichText
+	detailText               *widget.Entry
 	currentResource          map[string]interface{}
 	machineLinksContainer    *fyne.Container
 	versionLinksContainer    *fyne.Container
@@ -71,7 +71,7 @@ type AppState struct {
 
 type DetailComponents struct {
 	Title              *widget.Label
-	Text               *widget.RichText
+	Text               *widget.Entry
 	MachineLinks       *fyne.Container
 	VersionLinks       *fyne.Container
 	MachineSetLinks    *fyne.Container
@@ -570,20 +570,14 @@ func loadResourceTypeFolderChildren(node *TreeNode, appState *AppState, ctx cont
 			node.Children = []*TreeNode{}
 		}
 	} else if resourceType == omni.MachineType {
-		// For Machines, wrap in folder
+		// For Machines, add directly as children (no nested folder)
+		// Sort machines by label for better UX
 		if len(children) > 0 {
-			machinesFolder := &TreeNode{
-				ID:       "machines-folder",
-				Type:     "machines-folder",
-				Label:    "Machines",
-				Resource: map[string]interface{}{"type": "machines-folder"},
-				Children: children,
-			}
-			node.Children = []*TreeNode{machinesFolder}
-			addNodeToMap(machinesFolder)
-		} else {
-			node.Children = []*TreeNode{}
+			sort.Slice(children, func(i, j int) bool {
+				return children[i].Label < children[j].Label
+			})
 		}
+		node.Children = children
 	} else {
 		node.Children = children
 	}
@@ -840,6 +834,56 @@ func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context
 		resourceMap := resconverter.ToMap(cm)
 		enrichClusterMachineResource(resourceMap, string(omni.ClusterMachineType), machineID, appState.stateClient, ctx, 0)
 		childNode := createResourceNodeFromMap(resourceMap, machineID, string(omni.ClusterMachineType))
+		// Prefix label with "(ClusterMachine)" for clarity
+		if childNode.Label != "" {
+			childNode.Label = fmt.Sprintf("(ClusterMachine) %s", childNode.Label)
+		} else {
+			childNode.Label = fmt.Sprintf("(ClusterMachine) %s", machineID)
+		}
+		
+		// Pre-load ClusterMachine children: Machine (back reference), Cluster, MachineSet, and link nodes
+		clusterMachineChildren := make([]*TreeNode, 0)
+		
+		// Add Machine (back reference)
+		machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
+		machine, err := appState.stateClient.Get(ctx, machineMD)
+		if err == nil {
+			machineResourceMap := resconverter.ToMap(machine)
+			enrichMachineResource(machineResourceMap, string(omni.MachineType), machineID, appState.stateClient, ctx, 0)
+			machineNode := createResourceNodeFromMap(machineResourceMap, machineID, string(omni.MachineType))
+			clusterMachineChildren = append(clusterMachineChildren, machineNode)
+		}
+		
+		// Add Cluster (from labels)
+		if labels, ok := resourceMap["labels"].(map[string]interface{}); ok {
+			if clusterID, ok := labels["omni.sidero.dev/cluster"].(string); ok && clusterID != "" {
+				clusterMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterType, clusterID, resource.VersionUndefined)
+				cluster, err := appState.stateClient.Get(ctx, clusterMD)
+				if err == nil {
+					clusterResourceMap := resconverter.ToMap(cluster)
+					clusterNode := createResourceNodeFromMap(clusterResourceMap, clusterID, string(omni.ClusterType))
+					clusterMachineChildren = append(clusterMachineChildren, clusterNode)
+				}
+			}
+			
+			// Add MachineSet (from labels)
+			if machineSetID, ok := labels[labelKeyMachineSet].(string); ok && machineSetID != "" {
+				machineSetMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetType, machineSetID, resource.VersionUndefined)
+				machineSet, err := appState.stateClient.Get(ctx, machineSetMD)
+				if err == nil {
+					machineSetResourceMap := resconverter.ToMap(machineSet)
+					machineSetNode := createResourceNodeFromMap(machineSetResourceMap, machineSetID, string(omni.MachineSetType))
+					clusterMachineChildren = append(clusterMachineChildren, machineSetNode)
+				}
+			}
+		}
+		
+		// Add link nodes for ClusterMachine
+		clusterMachineLinks := createClusterMachineActionLinkNodes(machineID, appState)
+		clusterMachineChildren = append(clusterMachineChildren, clusterMachineLinks...)
+		
+		// Set children on ClusterMachine node
+		childNode.Children = clusterMachineChildren
 		children = append(children, childNode)
 	}
 	
@@ -870,6 +914,10 @@ func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context
 		children = append(children, childNode)
 	}
 	
+	// Add link nodes: Labels, Extensions, Upgrade Status, Metrics, Config Diff
+	machineLinks := createMachineActionLinkNodes(machineID, appState)
+	children = append(children, machineLinks...)
+	
 	node.Children = children
 	slog.Info("Loaded Machine children", "machine_id", machineID, "children_count", len(children))
 }
@@ -895,7 +943,9 @@ func createDetailComponents() *DetailComponents {
 	title := widget.NewLabel(i18n.T("tree.select_resource"))
 	title.TextStyle = fyne.TextStyle{Bold: true}
 
-	text := widget.NewRichText()
+	// Use multi-line Entry for copyable text
+	// Entry allows text selection and copying (edits will be overwritten on next update)
+	text := widget.NewMultiLineEntry()
 	text.Wrapping = fyne.TextWrapWord
 
 	return &DetailComponents{
@@ -985,7 +1035,7 @@ func refreshTreeData(appState *AppState) {
 		appState.detailTitle.SetText(i18n.T("tree.select_resource"))
 	}
 	if appState.detailText != nil {
-		appState.detailText.ParseMarkdown("")
+		appState.detailText.SetText("")
 	}
 	appState.currentResource = nil
 }
@@ -1025,7 +1075,7 @@ func showSettingsPage(parentWindow fyne.Window) {
 
 	// Create settings window
 	settingsWindow := fyne.CurrentApp().NewWindow("Settings")
-	settingsWindow.Resize(fyne.NewSize(500, 400))
+	settingsWindow.Resize(fyne.NewSize(500, 500)) // Increased height for language selector
 	settingsWindow.CenterOnScreen()
 
 	// Endpoint input
@@ -1170,10 +1220,24 @@ func showSettingsPage(parentWindow fyne.Window) {
 		settingsWindow.Close()
 	})
 
-	// Layout
-	content := container.NewVBox(
-		widget.NewLabel("Authentication Settings"),
-		widget.NewSeparator(),
+	// Language selector
+	refreshUI := func() {
+		// Refresh parent window UI when language changes
+		if parentWindow != nil {
+			parentWindow.Content().Refresh()
+		}
+	}
+	langLabel := widget.NewLabel("Language:")
+	langSelect := createLanguageSelector(nil, refreshUI)
+
+	// Application Settings tab content
+	appSettingsContent := container.NewVBox(
+		langLabel,
+		langSelect,
+	)
+
+	// Authentication Settings tab content
+	authSettingsContent := container.NewVBox(
 		endpointLabel,
 		endpointEntry,
 		widget.NewSeparator(),
@@ -1182,12 +1246,22 @@ func showSettingsPage(parentWindow fyne.Window) {
 		widget.NewSeparator(),
 		serviceAccountContainer,
 		oidcContainer,
+	)
+
+	// Create tabs - AppTabs constructor takes TabItem objects
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Application Settings", container.NewScroll(appSettingsContent)),
+		container.NewTabItem("Authentication Settings", container.NewScroll(authSettingsContent)),
+	)
+
+	// Layout with tabs and buttons
+	content := container.NewVBox(
+		tabs,
 		widget.NewSeparator(),
 		container.NewHBox(cancelButton, saveButton),
 	)
 
-	scrollContent := container.NewScroll(content)
-	settingsWindow.SetContent(scrollContent)
+	settingsWindow.SetContent(content)
 	settingsWindow.Show()
 }
 
@@ -1273,8 +1347,8 @@ func restartApplication(parentWindow fyne.Window) {
 	os.Exit(0)
 }
 
-func createMainLayout(burgerMenu *widget.Button, resourceTree *widget.Tree, detailComponents *DetailComponents, statusLabel *widget.Label, langSelect *widget.Select) *container.Split {
-	topBar := container.NewBorder(nil, nil, nil, langSelect, burgerMenu)
+func createMainLayout(burgerMenu *widget.Button, resourceTree *widget.Tree, detailComponents *DetailComponents, statusLabel *widget.Label) *container.Split {
+	topBar := container.NewBorder(nil, nil, nil, nil, burgerMenu)
 	// Format directive is in translation file: "app.connected" = "Connected to: %s"
 	infoLabel := widget.NewLabel(i18n.T("app.connected", os.Getenv("OMNI_ENDPOINT"))) //nolint
 	infoLabel.Wrapping = fyne.TextWrapWord
@@ -1286,15 +1360,30 @@ func createMainLayout(burgerMenu *widget.Button, resourceTree *widget.Tree, deta
 	treeScroll.SetMinSize(fyne.NewSize(300, 400))
 	leftPane := container.NewBorder(topBar, infoLabel, nil, nil, treeScroll)
 	
-	detailScroll := container.NewScroll(container.NewVBox(
-		detailComponents.Title,
-		detailComponents.ResourceActions,
-		detailComponents.Text,
-		detailComponents.MachineLinks,
-		detailComponents.VersionLinks,
-		detailComponents.MachineSetLinks,
-		detailComponents.MachineRelatedLinks,
-	))
+	// Order matches documentation GUI Layout Overview:
+	// Top Section: Title
+	// Main Content (Scrollable): JSON Text (expands to fill available space), containers at bottom
+	// Bottom Section: Status Label (added via Border container below)
+	
+	// Containers positioned at bottom (build from bottom of screen)
+	containersBox := container.NewVBox(
+		detailComponents.ResourceActions, // Containers: Resource Actions Container
+		detailComponents.MachineLinks,    // Containers: Machine Links Container
+		detailComponents.VersionLinks,   // Containers: Version Links Container
+		detailComponents.MachineSetLinks, // Containers: MachineSet Links Container
+		detailComponents.MachineRelatedLinks, // Containers: Machine Related Links Container
+	)
+	
+	// JSON text expands to fill available space, containers at bottom
+	// Use Border layout: top=Title, center=Text (expands), bottom=containers
+	detailContent := container.NewBorder(
+		detailComponents.Title, // Top: Resource Details Title
+		containersBox,          // Bottom: Containers (build from bottom)
+		nil, nil,
+		detailComponents.Text,   // Center: Resource JSON Text - expands to fill available space
+	)
+	
+	detailScroll := container.NewScroll(detailContent)
 	detailScroll.SetMinSize(fyne.NewSize(400, 0))
 
 	rightPane := container.NewBorder(nil, statusLabel, nil, nil, detailScroll)
@@ -1755,10 +1844,11 @@ func loadMachineStatusIfNeeded(resourceData map[string]interface{}, resourceType
 func updateDetailJSON(resourceData map[string]interface{}, appState *AppState) {
 	jsonBytes, err := json.MarshalIndent(resourceData, "", "  ")
 	if err != nil {
-		appState.detailText.ParseMarkdown(fmt.Sprintf("Error formatting JSON: %v", err))
+		appState.detailText.SetText(fmt.Sprintf("Error formatting JSON: %v", err))
 		return
 	}
-	appState.detailText.ParseMarkdown(fmt.Sprintf("```json\n%s\n```", string(jsonBytes)))
+	// Display JSON as plain text (no markdown formatting) so it's copyable
+	appState.detailText.SetText(string(jsonBytes))
 }
 
 func updateDetailLinks(resourceData map[string]interface{}, resourceType, resourceID string, appState *AppState) {
@@ -2540,17 +2630,7 @@ func main() {
 		addNodeToMap(appState.treeRoot)
 	}
 
-	refreshUI := func() {
-		statusLabel.SetText(i18n.T("app.ready"))
-		// Root label is not displayed (empty string ID), so no need to update it
-		if appState.detailTitle != nil {
-			appState.detailTitle.SetText(i18n.T("tree.select_resource"))
-		}
-		appState.resourceTree.Refresh()
-	}
-
-	langSelect := createLanguageSelector(appState, refreshUI)
-	mainContent := createMainLayout(burgerMenu, resourceTree, detailComponents, statusLabel, langSelect)
+	mainContent := createMainLayout(burgerMenu, resourceTree, detailComponents, statusLabel)
 
 	myWindow.SetContent(mainContent)
 	slog.Info("Window content set")

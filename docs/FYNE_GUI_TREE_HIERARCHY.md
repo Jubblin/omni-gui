@@ -2,6 +2,104 @@
 
 This document describes the tree structure hierarchy implemented in the Fyne GUI application for browsing Omni resources.
 
+## GUI Layout Overview
+
+The Fyne GUI uses a horizontal split layout dividing the window into two main panes:
+
+### Left Pane (30% width by default)
+
+**Top Section:**
+
+- **Burger Menu Button** (☰ Menu) - Located in the top-left corner
+  - Provides access to application menu options
+  - Options include: "Refresh" (rebuilds tree structure) and "Settings" (opens settings window)
+  - Opens a popup menu when clicked
+
+**Main Content:**
+
+- **Resource Tree** - Scrollable hierarchical tree view
+  - Displays hierarchical tree of Omni resources
+  - Three top-level resource type folders:
+    1. **Clusters** - Contains clusters and all related resources
+    2. **Machines** - Contains machines and all related resources  
+    3. **MachineSets** - Contains machine sets and all related resources
+  - Uses lazy loading - children are loaded when nodes are expanded
+  - Custom icons for different resource types (folders, computers, storage, documents, etc.)
+  - Minimum size: 300x400 pixels to ensure visibility
+
+**Bottom Section:**
+
+- **Connection Info Label** - Located at the bottom
+  - Displays "Connected to: [OMNI_ENDPOINT]"
+  - Text wrapping enabled for long endpoint URLs
+
+### Right Pane (70% width by default)
+
+**Top Section:**
+
+- **Resource Details Title** - Bold label
+  - Shows "Resource Details: [resource_id]" when a resource is selected
+  - Shows "Resource Details" when no resource is selected
+  - Updates dynamically when tree selection changes
+
+**Main Content (Scrollable):**
+
+- **Resource JSON Text** - Multi-line, selectable, copyable text field
+  - Displays formatted JSON (with indentation) of the selected resource
+  - Text wrapping enabled for long content
+  - **Text can be selected and copied** using standard keyboard shortcuts (Cmd+C on Mac, Ctrl+C on Windows/Linux)
+  - Editable (though edits will be overwritten on next update)
+  - Uses all available space in pane not used by other artifacts
+
+#### Containers (build from bottom of the screen)
+
+- **Resource Actions Container** - Action buttons/links (if applicable)
+- **Machine Links Container** - Machine-related links (displayed when viewing machine resources)
+- **Version Links Container** - Version-related links (displayed when applicable)
+- **MachineSet Links Container** - Machine set-related links (displayed when applicable)
+- **Machine Related Links Container** - Additional machine-related links (displayed when applicable)
+
+**Bottom Section:**
+
+- **Status Label** - Located at the bottom
+  - Shows application status messages (e.g., "Ready")
+  - Updates during operations to provide user feedback
+
+### Layout Features
+
+1. **Resizable Split**: The horizontal splitter can be dragged to adjust the width of left/right panes
+2. **Scrollable Content**: Both panes have independent scrolling when content exceeds visible area
+3. **Responsive Sizing**: Minimum sizes ensure components remain usable at different window sizes
+4. **Dynamic Content**: Right pane content updates based on tree selection
+5. **Text Selection**: Right pane JSON text is fully selectable and copyable
+
+### Window Properties
+
+- **Default Size**: 1400x900 pixels
+- **Centered**: Window automatically centers on screen when opened
+- **Theme Support**: Uses Fyne's built-in theme system (supports light/dark mode)
+
+The layout provides a clean separation between resource navigation (left) and resource details (right), with easy access to settings via the burger menu.
+
+### Settings Window
+
+The Settings window (accessed via ☰ Menu → Settings) contains:
+
+**Application Settings tab:**
+
+- **Language Selector** - Dropdown to choose UI language
+  - Automatically refreshes UI text when language is changed
+  - Changes take effect immediately without requiring application restart
+
+**Authentication Settings tab:**
+
+- **Omni Endpoint** - Configuration for the Omni API endpoint
+- **Authentication Method** - Choose between "Service Account" or "OIDC"
+- **Service Account Key** - Base64 encoded service account key (when using Service Account)
+- **OIDC Settings** - Issuer URL, Client ID, and Client Secret (when using OIDC)
+
+Settings can be saved and the application will prompt to restart to apply authentication changes.
+
 ## Overview
 
 The Fyne GUI displays resources in a hierarchical tree structure that reflects the relationships between different Omni resource types. The tree uses lazy loading - resources are loaded when their parent nodes are expanded.
@@ -48,21 +146,24 @@ Clusters (resource-type-folder)
 ## 2. Machines Hierarchy
 
 ```
-Machines (resource-type-folder)
-└── Machines (folder) [when expanded, loads all machines]
-    └── Machine 1
-        ├── ClusterMachine (reverse lookup - ClusterMachine ID = Machine ID)
-        │   ├── Machine (back reference)
-        │   ├── Cluster
-        │   ├── MachineSet
-        │   └── [Link nodes]
-        ├── MachineStatus (same ID as Machine)
-        └── [Link nodes: Labels, Extensions, Upgrade Status, Metrics, Config Diff]
+Machines (resource-type-folder) [when expanded, loads list of machines directly]
+└── Machine 1 [when expanded, loads the machine details]
+    ├── (ClusterMachine) ClusterMachine (reverse lookup - ClusterMachine ID = Machine ID, prefix label with "(ClusterMachine)", hidden if not found)
+    │   ├── Machine (back reference)
+    │   ├── Cluster (from labels)
+    │   ├── MachineSet (from labels, if applicable)
+    │   └── [Link nodes: Status, Config Status, Talos Version, Config]
+    ├── MachineStatus (same ID as Machine)
+    └── [Link nodes: Labels, Extensions, Upgrade Status, Metrics, Config Diff]
 ```
 
 ### Machine Children Details
 
-- **ClusterMachine**: Reverse lookup - since ClusterMachine ID equals Machine ID, the associated ClusterMachine is shown as a child.
+- **ClusterMachine**: Reverse lookup - since ClusterMachine ID equals Machine ID, the associated ClusterMachine is shown as a child with the label prefixed with "(ClusterMachine)" for clarity. The ClusterMachine node is only shown if it exists (hidden if not found). When expanded, it shows:
+  - **Machine**: Back reference to the Machine itself
+  - **Cluster**: The cluster this ClusterMachine belongs to (from `omni.sidero.dev/cluster` label)
+  - **MachineSet**: The MachineSet this ClusterMachine belongs to (from `omni.sidero.dev/machine-set` label, if applicable)
+  - **Link Nodes**: ClusterMachine-specific action links (Status, Config Status, Talos Version, Config)
 - **MachineStatus**: Status information for the machine (same ID as the Machine). When displayed in the detail pane, MachineStatus information appears as a nested `status` object containing fields like `hostname`, `platform`, `arch`, `talos_version`, `role`, `maintenance`, and `last_error`.
 - **Link Nodes**: Action links for machine-specific operations like Labels, Extensions, Upgrade Status, Metrics, and Config Diff.
 
@@ -97,7 +198,7 @@ MachineSets (resource-type-folder)
 
 - **Clusters**: Grouped under a "Clusters" folder when listing all clusters.
 - **MachineSets**: Grouped under a "MachineSets" folder, sorted alphabetically by name.
-- **Machines**: Grouped under a "Machines" folder when listing all machines.
+- **Machines**: Listed directly as children of the "Machines" resource-type-folder (no nested folder), sorted alphabetically by label.
 
 ### 3. Link Nodes
 
@@ -156,7 +257,7 @@ The tree supports bidirectional navigation:
 - **`loadClusterChildren`**: Loads MachineSets, orphaned ClusterMachines, and KubernetesVersion for a cluster
 - **`loadMachineSetChildren`**: Loads ClusterMachines for a MachineSet
 - **`loadClusterMachineChildren`**: Loads Machine, Cluster, and MachineSet for a ClusterMachine
-- **`loadMachineChildren`**: Loads ClusterMachine (reverse lookup) and MachineStatus for a Machine
+- **`loadMachineChildren`**: Loads ClusterMachine (reverse lookup with "(ClusterMachine)" prefix), MachineStatus, and link nodes for a Machine. Pre-loads ClusterMachine children (Machine, Cluster, MachineSet, and link nodes).
 - **`addLinkNodes`**: Adds action link nodes based on resource type
 
 ### Resource Relationships
