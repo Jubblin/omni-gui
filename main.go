@@ -851,7 +851,18 @@ func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context
 		statusID := fmt.Sprintf("%s-status", machineID)
 		childNode := createResourceNodeFromMap(resourceMap, statusID, string(omni.MachineStatusType))
 		// Set a descriptive label for MachineStatus
-		if hostname, ok := resourceMap["hostname"].(string); ok && hostname != "" {
+		var hostname string
+		if status, ok := resourceMap["status"].(map[string]interface{}); ok {
+			if h, ok := status["hostname"].(string); ok && h != "" {
+				hostname = h
+			}
+		}
+		if hostname == "" {
+			if h, ok := resourceMap["hostname"].(string); ok && h != "" {
+				hostname = h
+			}
+		}
+		if hostname != "" {
 			childNode.Label = fmt.Sprintf("MachineStatus (%s)", hostname)
 		} else {
 			childNode.Label = "MachineStatus"
@@ -913,10 +924,13 @@ func setupAppState(appState *AppState, resourceTree *widget.Tree, resourceIDInpu
 	appState.resourceActionsContainer = detailComponents.ResourceActions
 }
 
-func createBurgerMenu(myWindow fyne.Window) *widget.Button {
+func createBurgerMenu(myWindow fyne.Window, appState *AppState) *widget.Button {
 	burgerMenu := widget.NewButton("☰ Menu", nil)
 	
 	menuItems := []*fyne.MenuItem{
+		fyne.NewMenuItem("Refresh", func() {
+			refreshTreeData(appState)
+		}),
 		fyne.NewMenuItem("Settings", func() {
 			showSettingsPage(myWindow)
 		}),
@@ -931,6 +945,49 @@ func createBurgerMenu(myWindow fyne.Window) *widget.Button {
 	}
 
 	return burgerMenu
+}
+
+func refreshTreeData(appState *AppState) {
+	if appState == nil {
+		slog.Warn("Cannot refresh: appState is nil")
+		return
+	}
+	
+	slog.Info("Refreshing tree data - rebuilding internal structure")
+	
+	// Clear existing node map
+	nodeMap = make(map[widget.TreeNodeID]*TreeNode)
+	
+	// Rebuild initial tree structure
+	root := buildInitialTree()
+	appState.treeRoot = root
+	setRootNode(root)
+	addNodeToMap(root)
+	
+	// Refresh the tree widget to show the changes
+	if appState.resourceTree != nil {
+		appState.resourceTree.Refresh()
+		// Open root branch to show top-level folders
+		appState.resourceTree.OpenBranch("")
+		appState.resourceTree.Refresh()
+		slog.Info("Tree refreshed successfully")
+	} else {
+		slog.Warn("Cannot refresh tree widget: resourceTree is nil")
+	}
+	
+	// Update status label
+	if appState.statusLabel != nil {
+		appState.statusLabel.SetText("Tree data refreshed")
+	}
+	
+	// Clear detail pane
+	if appState.detailTitle != nil {
+		appState.detailTitle.SetText(i18n.T("tree.select_resource"))
+	}
+	if appState.detailText != nil {
+		appState.detailText.ParseMarkdown("")
+	}
+	appState.currentResource = nil
 }
 
 func createLanguageSelector(appState *AppState, refreshUI func()) *widget.Select {
@@ -1468,9 +1525,33 @@ func enrichMachineResource(resourceMap map[string]interface{}, resourceType, res
 		return
 	}
 
-	if ms.TypedSpec().Value.Network != nil && ms.TypedSpec().Value.Network.Hostname != "" {
-		resourceMap["hostname"] = ms.TypedSpec().Value.Network.Hostname
+	// Create nested status object with all MachineStatus fields
+	statusInfo := make(map[string]interface{})
+	spec := ms.TypedSpec().Value
+	
+	statusInfo["talos_version"] = spec.TalosVersion
+	statusInfo["role"] = spec.Role.String()
+	statusInfo["maintenance"] = spec.Maintenance
+	if spec.LastError != "" {
+		statusInfo["last_error"] = spec.LastError
 	}
+	if spec.Network != nil {
+		if spec.Network.Hostname != "" {
+			statusInfo["hostname"] = spec.Network.Hostname
+		}
+	}
+	if spec.PlatformMetadata != nil {
+		if spec.PlatformMetadata.Platform != "" {
+			statusInfo["platform"] = spec.PlatformMetadata.Platform
+		}
+	}
+	if spec.Hardware != nil {
+		if spec.Hardware.Arch != "" {
+			statusInfo["arch"] = spec.Hardware.Arch
+		}
+	}
+	
+	resourceMap["status"] = statusInfo
 }
 
 func enrichClusterMachineResource(resourceMap map[string]interface{}, resourceType, resourceID string, stateClient state.State, ctx context.Context, depth int) {
@@ -1494,9 +1575,33 @@ func enrichClusterMachineResource(resourceMap map[string]interface{}, resourceTy
 		return
 	}
 
-	if ms.TypedSpec().Value.Network != nil && ms.TypedSpec().Value.Network.Hostname != "" {
-		resourceMap["hostname"] = ms.TypedSpec().Value.Network.Hostname
+	// Create nested status object with all MachineStatus fields
+	statusInfo := make(map[string]interface{})
+	spec := ms.TypedSpec().Value
+	
+	statusInfo["talos_version"] = spec.TalosVersion
+	statusInfo["role"] = spec.Role.String()
+	statusInfo["maintenance"] = spec.Maintenance
+	if spec.LastError != "" {
+		statusInfo["last_error"] = spec.LastError
 	}
+	if spec.Network != nil {
+		if spec.Network.Hostname != "" {
+			statusInfo["hostname"] = spec.Network.Hostname
+		}
+	}
+	if spec.PlatformMetadata != nil {
+		if spec.PlatformMetadata.Platform != "" {
+			statusInfo["platform"] = spec.PlatformMetadata.Platform
+		}
+	}
+	if spec.Hardware != nil {
+		if spec.Hardware.Arch != "" {
+			statusInfo["arch"] = spec.Hardware.Arch
+		}
+	}
+	
+	resourceMap["status"] = statusInfo
 }
 
 func createResourceNodeFromMap(resourceMap map[string]interface{}, resourceID, resourceType string) *TreeNode {
@@ -1527,13 +1632,37 @@ func formatResourceLabel(resourceMap map[string]interface{}) string {
 			label = fmt.Sprintf("%s (K8s: %s)", resourceID, kv)
 		}
 	case string(omni.MachineType):
-		if hostname, ok := resourceMap["hostname"].(string); ok && hostname != "" {
+		// Check for hostname in nested status object (from API) or direct field (from enrichment)
+		var hostname string
+		if status, ok := resourceMap["status"].(map[string]interface{}); ok {
+			if h, ok := status["hostname"].(string); ok && h != "" {
+				hostname = h
+			}
+		}
+		if hostname == "" {
+			if h, ok := resourceMap["hostname"].(string); ok && h != "" {
+				hostname = h
+			}
+		}
+		if hostname != "" {
 			label = hostname
 		} else if addr, ok := resourceMap["management_address"].(string); ok && addr != "" {
 			label = fmt.Sprintf("%s (%s)", resourceID, addr)
 		}
 	case string(omni.ClusterMachineType):
-		if hostname, ok := resourceMap["hostname"].(string); ok && hostname != "" {
+		// Check for hostname in nested status object (from API) or direct field (from enrichment)
+		var hostname string
+		if status, ok := resourceMap["status"].(map[string]interface{}); ok {
+			if h, ok := status["hostname"].(string); ok && h != "" {
+				hostname = h
+			}
+		}
+		if hostname == "" {
+			if h, ok := resourceMap["hostname"].(string); ok && h != "" {
+				hostname = h
+			}
+		}
+		if hostname != "" {
 			label = hostname
 		} else if machineID, ok := resourceMap["machine_id"].(string); ok && machineID != "" {
 			label = fmt.Sprintf("%s (Machine: %s)", resourceID, machineID)
@@ -1588,11 +1717,38 @@ func loadMachineStatusIfNeeded(resourceData map[string]interface{}, resourceType
 		return resourceData
 	}
 
-	statusMap := resconverter.ToMap(machineStatus)
-	if statusSpec, ok := statusMap["spec"].(map[string]interface{}); ok {
-		resourceData["machine_status"] = statusSpec
+	ms, ok := machineStatus.(*omni.MachineStatus)
+	if !ok {
+		return resourceData
 	}
 
+	// Create nested status object with all MachineStatus fields
+	statusInfo := make(map[string]interface{})
+	spec := ms.TypedSpec().Value
+	
+	statusInfo["talos_version"] = spec.TalosVersion
+	statusInfo["role"] = spec.Role.String()
+	statusInfo["maintenance"] = spec.Maintenance
+	if spec.LastError != "" {
+		statusInfo["last_error"] = spec.LastError
+	}
+	if spec.Network != nil {
+		if spec.Network.Hostname != "" {
+			statusInfo["hostname"] = spec.Network.Hostname
+		}
+	}
+	if spec.PlatformMetadata != nil {
+		if spec.PlatformMetadata.Platform != "" {
+			statusInfo["platform"] = spec.PlatformMetadata.Platform
+		}
+	}
+	if spec.Hardware != nil {
+		if spec.Hardware.Arch != "" {
+			statusInfo["arch"] = spec.Hardware.Arch
+		}
+	}
+	
+	resourceData["status"] = statusInfo
 	return resourceData
 }
 
@@ -2370,7 +2526,7 @@ func main() {
 	detailComponents := createDetailComponents()
 	statusLabel := widget.NewLabel(i18n.T("app.ready"))
 
-	burgerMenu := createBurgerMenu(myWindow)
+	burgerMenu := createBurgerMenu(myWindow, appState)
 
 	setupAppState(appState, resourceTree, nil, statusLabel, detailComponents)
 	

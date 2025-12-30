@@ -11,6 +11,17 @@ import (
 	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 )
 
+// MachineStatusInfo represents machine status information from MachineStatus resource
+type MachineStatusInfo struct {
+	Hostname     string `json:"hostname,omitempty"`
+	Platform     string `json:"platform,omitempty"`
+	Arch         string `json:"arch,omitempty"`
+	TalosVersion string `json:"talos_version,omitempty"`
+	Role         string `json:"role,omitempty"`
+	Maintenance  bool   `json:"maintenance,omitempty"`
+	LastError    string `json:"last_error,omitempty"`
+}
+
 // MachineResponse represents the machine information returned by the API
 type MachineResponse struct {
 	ID                string            `json:"id"`
@@ -19,15 +30,8 @@ type MachineResponse struct {
 	Connected         bool              `json:"connected"`
 	UseGrpcTunnel     bool              `json:"use_grpc_tunnel"`
 	Labels            map[string]string `json:"labels,omitempty"`
-	// Status fields (from MachineStatus resource)
-	Hostname          string            `json:"hostname,omitempty"`
-	Platform          string            `json:"platform,omitempty"`
-	Arch              string            `json:"arch,omitempty"`
-	TalosVersion      string            `json:"talos_version,omitempty"`
-	Role              string            `json:"role,omitempty"`
-	Maintenance       bool              `json:"maintenance,omitempty"`
-	LastError         string            `json:"last_error,omitempty"`
-	Links             map[string]string `json:"_links,omitempty"`
+	Status            *MachineStatusInfo `json:"status,omitempty"`
+	Links             map[string]string  `json:"_links,omitempty"`
 }
 
 // MachineHandler handles machine requests
@@ -92,21 +96,24 @@ func (h *MachineHandler) ListMachines(c *gin.Context) {
 		if statusRes, err := st.Get(c.Request.Context(), statusMD); err == nil {
 			if ms, ok := statusRes.(*omni.MachineStatus); ok {
 				spec := ms.TypedSpec().Value
-				resp.TalosVersion = spec.TalosVersion
-				resp.Role = spec.Role.String()
-				resp.Maintenance = spec.Maintenance
+				statusInfo := &MachineStatusInfo{
+					TalosVersion: spec.TalosVersion,
+					Role:         spec.Role.String(),
+					Maintenance:  spec.Maintenance,
+				}
 				if spec.LastError != "" {
-					resp.LastError = spec.LastError
+					statusInfo.LastError = spec.LastError
 				}
 				if spec.Network != nil {
-					resp.Hostname = spec.Network.Hostname
+					statusInfo.Hostname = spec.Network.Hostname
 				}
 				if spec.PlatformMetadata != nil {
-					resp.Platform = spec.PlatformMetadata.Platform
+					statusInfo.Platform = spec.PlatformMetadata.Platform
 				}
 				if spec.Hardware != nil {
-					resp.Arch = spec.Hardware.Arch
+					statusInfo.Arch = spec.Hardware.Arch
 				}
+				resp.Status = statusInfo
 			}
 		}
 
@@ -179,21 +186,24 @@ func (h *MachineHandler) GetMachine(c *gin.Context) {
 	if statusRes, err := st.Get(c.Request.Context(), statusMD); err == nil {
 		if ms, ok := statusRes.(*omni.MachineStatus); ok {
 			spec := ms.TypedSpec().Value
-			resp.TalosVersion = spec.TalosVersion
-			resp.Role = spec.Role.String()
-			resp.Maintenance = spec.Maintenance
+			statusInfo := &MachineStatusInfo{
+				TalosVersion: spec.TalosVersion,
+				Role:         spec.Role.String(),
+				Maintenance:  spec.Maintenance,
+			}
 			if spec.LastError != "" {
-				resp.LastError = spec.LastError
+				statusInfo.LastError = spec.LastError
 			}
 			if spec.Network != nil {
-				resp.Hostname = spec.Network.Hostname
+				statusInfo.Hostname = spec.Network.Hostname
 			}
 			if spec.PlatformMetadata != nil {
-				resp.Platform = spec.PlatformMetadata.Platform
+				statusInfo.Platform = spec.PlatformMetadata.Platform
 			}
 			if spec.Hardware != nil {
-				resp.Arch = spec.Hardware.Arch
+				statusInfo.Arch = spec.Hardware.Arch
 			}
+			resp.Status = statusInfo
 		}
 	}
 

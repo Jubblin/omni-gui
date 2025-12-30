@@ -85,21 +85,24 @@ func (h *MachineStatusHandler) GetMachineStatus(c *gin.Context) {
 	if statusRes, err := st.Get(c.Request.Context(), statusMD); err == nil {
 		if ms, ok := statusRes.(*omni.MachineStatus); ok {
 			spec := ms.TypedSpec().Value
-			resp.TalosVersion = spec.TalosVersion
-			resp.Role = spec.Role.String()
-			resp.Maintenance = spec.Maintenance
+			statusInfo := &MachineStatusInfo{
+				TalosVersion: spec.TalosVersion,
+				Role:         spec.Role.String(),
+				Maintenance:  spec.Maintenance,
+			}
 			if spec.LastError != "" {
-				resp.LastError = spec.LastError
+				statusInfo.LastError = spec.LastError
 			}
 			if spec.Network != nil {
-				resp.Hostname = spec.Network.Hostname
+				statusInfo.Hostname = spec.Network.Hostname
 			}
 			if spec.PlatformMetadata != nil {
-				resp.Platform = spec.PlatformMetadata.Platform
+				statusInfo.Platform = spec.PlatformMetadata.Platform
 			}
 			if spec.Hardware != nil {
-				resp.Arch = spec.Hardware.Arch
+				statusInfo.Arch = spec.Hardware.Arch
 			}
+			resp.Status = statusInfo
 		}
 	}
 

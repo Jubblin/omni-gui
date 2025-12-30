@@ -70,9 +70,12 @@ func TestMachineStatusHandler_GetMachineStatus(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.NoError(t, err)
 	assert.Equal(t, "machine-1", resp.ID)
-	assert.Equal(t, "v1.5.0", resp.TalosVersion)
-	assert.Equal(t, "CONTROL_PLANE", resp.Role)
-	assert.Equal(t, "talos-node-1", resp.Hostname)
-	assert.Equal(t, "metal", resp.Platform)
-	assert.Equal(t, "amd64", resp.Arch)
+	assert.NotNil(t, resp.Status, "Status should be populated")
+	if resp.Status != nil {
+		assert.Equal(t, "v1.5.0", resp.Status.TalosVersion)
+		assert.Equal(t, "CONTROL_PLANE", resp.Status.Role)
+		assert.Equal(t, "talos-node-1", resp.Status.Hostname)
+		assert.Equal(t, "metal", resp.Status.Platform)
+		assert.Equal(t, "amd64", resp.Status.Arch)
+	}
 }
