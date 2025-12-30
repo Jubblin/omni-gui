@@ -67,6 +67,7 @@ type AppState struct {
 	machineSetLinksContainer *fyne.Container
 	machineRelatedLinksContainer *fyne.Container
 	resourceActionsContainer *fyne.Container
+	containersBox              *fyne.Container // Reference to the containers VBox for dynamic updates
 }
 
 type DetailComponents struct {
@@ -1366,6 +1367,7 @@ func createMainLayout(burgerMenu *widget.Button, resourceTree *widget.Tree, deta
 	// Bottom Section: Status Label (added via Border container below)
 	
 	// Containers positioned at bottom (build from bottom of screen)
+	// Only show containers when they have content (hide empty containers to avoid blank lines)
 	containersBox := container.NewVBox(
 		detailComponents.ResourceActions, // Containers: Resource Actions Container
 		detailComponents.MachineLinks,    // Containers: Machine Links Container
@@ -1373,6 +1375,12 @@ func createMainLayout(burgerMenu *widget.Button, resourceTree *widget.Tree, deta
 		detailComponents.MachineSetLinks, // Containers: MachineSet Links Container
 		detailComponents.MachineRelatedLinks, // Containers: Machine Related Links Container
 	)
+	// Initially hide all containers (they'll be shown when populated)
+	detailComponents.ResourceActions.Hide()
+	detailComponents.MachineLinks.Hide()
+	detailComponents.VersionLinks.Hide()
+	detailComponents.MachineSetLinks.Hide()
+	detailComponents.MachineRelatedLinks.Hide()
 	
 	// JSON text expands to fill available space, containers at bottom
 	// Use Border layout: top=Title, center=Text (expands), bottom=containers
@@ -1857,6 +1865,7 @@ func updateDetailLinks(resourceData map[string]interface{}, resourceType, resour
 	updateMachineIDLinks(resourceData, appState)
 	updateKubernetesVersionLinks(resourceData, appState)
 	updateMachineSetLinks(resourceData, appState)
+	// Note: Containers are automatically shown/hidden based on content in their update functions
 }
 
 func clearAllLinkContainers(appState *AppState) {
@@ -1865,10 +1874,17 @@ func clearAllLinkContainers(appState *AppState) {
 	appState.versionLinksContainer.RemoveAll()
 	appState.machineSetLinksContainer.RemoveAll()
 	appState.machineRelatedLinksContainer.RemoveAll()
+	// Hide all containers when cleared
+	appState.resourceActionsContainer.Hide()
+	appState.machineLinksContainer.Hide()
+	appState.versionLinksContainer.Hide()
+	appState.machineSetLinksContainer.Hide()
+	appState.machineRelatedLinksContainer.Hide()
 }
 
 func updateResourceActions(resourceType, resourceID string, appState *AppState) {
 	if resourceID == "" {
+		appState.resourceActionsContainer.Hide()
 		return
 	}
 
@@ -1908,6 +1924,10 @@ func updateResourceActions(resourceType, resourceID string, appState *AppState) 
 		addActionButton("Talos Version", func() { loadClusterMachineTalosVersion(resourceID, appState) }, appState)
 		addActionButton("Config", func() { loadClusterMachineConfig(resourceID, appState) }, appState)
 	}
+	// Show container if it has content
+	if len(appState.resourceActionsContainer.Objects) > 0 {
+		appState.resourceActionsContainer.Show()
+	}
 }
 
 func addActionButton(label string, action func(), appState *AppState) {
@@ -1918,6 +1938,7 @@ func addActionButton(label string, action func(), appState *AppState) {
 func updateMachineIDLinks(resourceData map[string]interface{}, appState *AppState) {
 	machineIDs := findMachineIDs(resourceData)
 	if len(machineIDs) == 0 {
+		appState.machineLinksContainer.Hide()
 		return
 	}
 
@@ -1932,6 +1953,7 @@ func updateMachineIDLinks(resourceData map[string]interface{}, appState *AppStat
 		}(machineID))
 		appState.machineLinksContainer.Add(btn)
 	}
+	appState.machineLinksContainer.Show()
 }
 
 func findMachineIDs(resourceData map[string]interface{}) []string {
@@ -1945,6 +1967,7 @@ func findMachineIDs(resourceData map[string]interface{}) []string {
 func updateKubernetesVersionLinks(resourceData map[string]interface{}, appState *AppState) {
 	k8sVersions := findKubernetesVersions(resourceData)
 	if len(k8sVersions) == 0 {
+		appState.versionLinksContainer.Hide()
 		return
 	}
 
@@ -1959,6 +1982,7 @@ func updateKubernetesVersionLinks(resourceData map[string]interface{}, appState 
 		}(version))
 		appState.versionLinksContainer.Add(btn)
 	}
+	appState.versionLinksContainer.Show()
 }
 
 func findKubernetesVersions(resourceData map[string]interface{}) []string {
@@ -1982,6 +2006,7 @@ func findMachineSetIDs(resourceData map[string]interface{}) []string {
 func updateMachineSetLinks(resourceData map[string]interface{}, appState *AppState) {
 	machineSetIDs := findMachineSetIDs(resourceData)
 	if len(machineSetIDs) == 0 {
+		appState.machineSetLinksContainer.Hide()
 		return
 	}
 
@@ -1996,6 +2021,7 @@ func updateMachineSetLinks(resourceData map[string]interface{}, appState *AppSta
 		}(machineSetID))
 		appState.machineSetLinksContainer.Add(btn)
 	}
+	appState.machineSetLinksContainer.Show()
 }
 
 // addLinkNodes adds link nodes as children to a resource node

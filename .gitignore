@@ -9,7 +9,7 @@
 *.dylib
 bin/*
 */omni-api
-*/omni-gui
+omni-gui
 
 # Test binary, built with `go test -c`
 *.test
@@ -40,4 +40,5 @@ go.work.sum
 
 # Mac specific files
 .DS_Store
+omni-gui
 omni-gui
