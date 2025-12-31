@@ -15,7 +15,7 @@ Talos Omni GUI is a Go-based desktop application built with Fyne that provides a
 - **Multi-Language Support**: Internationalization support for multiple languages
 - **Real-Time Updates**: Refresh tree data to see latest resource state
 - **Settings Management**: Configure Omni endpoint and authentication through a settings window
-- **Structured Logging**: All logs output as valid JSON to both console and log file (`omni-api.log` in execution directory)
+- **Structured Logging**: All logs output as valid JSON to both console and log file (`omni-api.json` in execution directory)
 
 ## Requirements
 
@@ -296,7 +296,7 @@ Contributions are welcome! Please ensure:
 
 For issues and questions:
 
-- Review application logs for error messages (logs are written to `omni-api.log` in the execution directory)
+- Review application logs for error messages (logs are written to `omni-api.json` in the execution directory)
 - All logs are output as valid JSON for easy parsing and analysis
 - Verify environment variable configuration
 - Check the Settings window for configuration options
@@ -305,7 +305,7 @@ For issues and questions:
 
 The application logs all output as structured JSON to both the console (stderr) and a log file:
 
-- **Log File Location**: `omni-api.log` in the execution directory (where you run the application)
+- **Log File Location**: `omni-api.json` in the execution directory (where you run the application)
 - **Log Format**: Valid JSON with structured fields (time, level, msg, source, etc.)
 - **Startup Banner**: Each execution begins with a startup banner containing version, timestamp, and configuration
 - **Log Levels**: Info, Debug, Warn, Error

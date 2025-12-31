@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log/slog"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -19,9 +18,6 @@ import (
 var nodeMap = make(map[widget.TreeNodeID]*TreeNode)
 
 var rootNode *TreeNode
-
-// linkActionMap stores actions for link nodes
-var linkActionMap = make(map[string]func())
 
 // buildInitialTree creates the initial tree structure
 func buildInitialTree() *TreeNode {
@@ -75,10 +71,29 @@ func getChildIDs(id widget.TreeNodeID) []widget.TreeNodeID {
 	}
 	childIDs := make([]widget.TreeNodeID, 0, len(node.Children))
 	for _, child := range node.Children {
+		// Skip nil children to prevent crashes
+		if child == nil {
+			slog.Warn("getChildIDs: found nil child in node", "node_id", id, "node_type", node.Type)
+			continue
+		}
+		// Skip nodes with empty IDs to prevent crashes
+		if child.ID == "" {
+			slog.Warn("getChildIDs: found child with empty ID", "node_id", id, "node_type", node.Type, "child_type", child.Type, "child_label", child.Label)
+			continue
+		}
 		// Skip nodes with empty labels to avoid blank leaves (unless flag is set)
 		if showEmptyLabelNodes || child.Label != "" {
 			childIDs = append(childIDs, child.ID)
 		}
+	}
+	// Log for ClusterMachine and Machine nodes to debug MachineStatus visibility (DEBUG level to reduce noise)
+	if (node.Type == string(omni.ClusterMachineType) || node.Type == string(omni.MachineType)) && len(node.Children) > 0 {
+		slog.Debug("getChildIDs", 
+			"node_id", id,
+			"node_type", node.Type,
+			"children_count", len(node.Children),
+			"child_ids_count", len(childIDs),
+			"child_ids", childIDs)
 	}
 	return childIDs
 }
@@ -207,16 +222,25 @@ func setRootNode(node *TreeNode) {
 }
 
 // addNodeToMap adds a node and its children to the node map
+// It prevents infinite recursion by checking if a node is already in the map
 func addNodeToMap(node *TreeNode) {
-	if node != nil {
-		// Add node to map (even root with empty ID)
-		if node.ID != "" {
-			nodeMap[node.ID] = node
+	if node == nil {
+		return
+	}
+	
+	// Check if node is already in the map to prevent infinite recursion
+	// (e.g., Machine -> ClusterMachine -> Machine circular reference)
+	if node.ID != "" {
+		if _, exists := nodeMap[node.ID]; exists {
+			// Node already in map, skip to prevent infinite recursion
+			return
 		}
-		// Also add all children recursively
-		for _, child := range node.Children {
-			addNodeToMap(child)
-		}
+		nodeMap[node.ID] = node
+	}
+	
+	// Add all children recursively (only if not already in map)
+	for _, child := range node.Children {
+		addNodeToMap(child)
 	}
 }
 
@@ -235,11 +259,6 @@ func canHaveChildren(resourceType string) bool {
 	// Clusters, MachineSets, and Machines folders can have children
 	if resourceType == clustersFolder || resourceType == machinesetsFolder || resourceType == machinesFolder {
 		return true
-	}
-	
-	// Link nodes are always leaves
-	if strings.HasPrefix(resourceType, "link-") {
-		return false
 	}
 	
 	switch resourceType {
@@ -290,10 +309,6 @@ func getIconForResourceType(themeInstance fyne.Theme, resourceType string, isBra
 	case "placeholder":
 		return themeInstance.Icon(theme.IconNameFile)
 	default:
-		// Link nodes use document icon
-		if strings.HasPrefix(resourceType, "link-") {
-			return themeInstance.Icon(theme.IconNameDocument)
-		}
 		if isBranch {
 			return themeInstance.Icon(theme.IconNameFolder)
 		}
@@ -311,16 +326,7 @@ func handleNodeSelection(id widget.TreeNodeID, appState *AppState) {
 		return
 	}
 	
-	// Check if this is a link node
-	if strings.HasPrefix(node.Type, "link-") {
-		// Execute the link action
-		if action, ok := linkActionMap[id]; ok {
-			action()
-		}
-		return
-	}
-	
-	// Regular resource node - show details
+	// Show details for resource node
 	if node.Resource != nil {
 		updateDetailPane(node.Resource, appState)
 	}
@@ -343,12 +349,16 @@ func handleBranchOpened(id widget.TreeNodeID, resourceTree *widget.Tree, appStat
 		addNodeToMap(node)
 		// Refresh tree to show new children
 		resourceTree.Refresh()
+	} else if len(node.Children) > 0 {
+		// Children are already loaded (pre-loaded), ensure they're in the map and refresh
+		addNodeToMap(node)
+		resourceTree.Refresh()
 	}
 }
 
 // setupTreeSelection sets up tree selection and branch expansion handlers
 func setupTreeSelection(resourceTree *widget.Tree, appState *AppState) {
-	// Handle node selection - show details in detail pane or execute link action
+	// Handle node selection - show details in detail pane
 	resourceTree.OnSelected = func(id widget.TreeNodeID) {
 		handleNodeSelection(id, appState)
 	}

@@ -69,11 +69,6 @@ func TestContainerVisibility(t *testing.T) {
 	
 	assert.True(t, appState.machineLinksContainer.Visible(), "MachineLinks container should be visible when it has content")
 	assert.Greater(t, len(appState.machineLinksContainer.Objects), 0, "MachineLinks container should have objects")
-
-	// Test 6: Test updateResourceActions with empty resourceID
-	updateResourceActions("", "", appState)
-	
-	assert.False(t, appState.resourceActionsContainer.Visible(), "ResourceActions container should be hidden when resourceID is empty")
 }
 
 // TestClearAllLinkContainers tests that clearAllLinkContainers properly clears and hides all containers

@@ -44,7 +44,7 @@ This document provides a guide on how to use the Fyne GUI application for browsi
 - **Lazy Loading**: Resources are loaded on-demand when you expand nodes, so initial load time is fast.
 - **Empty Label Filtering**: By default, nodes with empty labels are hidden. Enable "Show nodes with empty labels in the tree" in Settings (Application Settings tab) to see all nodes. This setting applies immediately without restart.
 - **Ignore Environment Variables**: Enable "Ignore environment variables and use only settings file" in Settings (Application Settings tab) to use only settings file values and ignore all environment variables. This setting applies immediately without restart.
-- **Logging**: All application logs are written as valid JSON to `omni-api.log` in the execution directory. Each execution starts with a startup banner containing version and configuration information.
+- **Logging**: All application logs are written as valid JSON to `omni-api.json` in the execution directory. Each execution starts with a startup banner containing version and configuration information.
 - **Orphaned Resources**: ClusterMachines not in a MachineSet are shown directly under their Cluster for easy identification.
 - **Link Nodes**: Use link nodes to quickly access related resources without navigating the full hierarchy.
 - **Refresh**: Use the Refresh option from the burger menu to reset the tree view after changes in your Omni instance.
