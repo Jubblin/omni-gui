@@ -10,7 +10,7 @@ require (
 	github.com/siderolabs/omni/client v1.4.0-beta.1.0.20251218113632-d5f6ebf33a5d
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.33.0
-	google.golang.org/protobuf v1.36.10
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
