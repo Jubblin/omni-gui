@@ -55,7 +55,7 @@ func loadMachineStatusIfNeeded(resourceData map[string]interface{}, resourceType
 
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineStatusType, resourceID, resource.VersionUndefined)
-	machineStatus, err := appState.stateClient.Get(ctx, md)
+	machineStatus, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		return resourceData
 	}

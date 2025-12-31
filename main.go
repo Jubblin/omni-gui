@@ -4,9 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -98,52 +101,52 @@ func convertResourcesToNodes(items []resource.Resource, resourceTypeStr string, 
 		children = append(children, childNode)
 	}
 	return children
-}
-
+	}
+	
 // handleClusterTypeChildren handles children for Cluster resource type
 func handleClusterTypeChildren(node *TreeNode, children []*TreeNode) {
-	if len(children) > 0 {
-		clustersFolderNode := &TreeNode{
-			ID:       clustersFolder,
-			Type:     clustersFolder,
-			Label:    "Clusters",
-			Resource: map[string]interface{}{"type": clustersFolder},
-			Children: children,
+		if len(children) > 0 {
+			clustersFolderNode := &TreeNode{
+				ID:       clustersFolder,
+				Type:     clustersFolder,
+				Label:    "Clusters",
+				Resource: map[string]interface{}{"type": clustersFolder},
+				Children: children,
+			}
+			node.Children = []*TreeNode{clustersFolderNode}
+			addNodeToMap(clustersFolderNode)
+		} else {
+			node.Children = []*TreeNode{}
 		}
-		node.Children = []*TreeNode{clustersFolderNode}
-		addNodeToMap(clustersFolderNode)
-	} else {
-		node.Children = []*TreeNode{}
-	}
 }
 
 // handleMachineSetTypeChildren handles children for MachineSet resource type
 func handleMachineSetTypeChildren(node *TreeNode, children []*TreeNode) {
-	if len(children) > 0 {
-		sort.Slice(children, func(i, j int) bool {
-			return children[i].Label < children[j].Label
-		})
-		machineSetsFolder := &TreeNode{
-			ID:       machinesetsFolder,
-			Type:     machinesetsFolder,
-			Label:    "MachineSets",
-			Resource: map[string]interface{}{"type": machinesetsFolder},
-			Children: children,
+		if len(children) > 0 {
+			sort.Slice(children, func(i, j int) bool {
+				return children[i].Label < children[j].Label
+			})
+			machineSetsFolder := &TreeNode{
+				ID:       machinesetsFolder,
+				Type:     machinesetsFolder,
+				Label:    "MachineSets",
+				Resource: map[string]interface{}{"type": machinesetsFolder},
+				Children: children,
+			}
+			node.Children = []*TreeNode{machineSetsFolder}
+			addNodeToMap(machineSetsFolder)
+		} else {
+			node.Children = []*TreeNode{}
 		}
-		node.Children = []*TreeNode{machineSetsFolder}
-		addNodeToMap(machineSetsFolder)
-	} else {
-		node.Children = []*TreeNode{}
-	}
 }
 
 // handleMachineTypeChildren handles children for Machine resource type
 func handleMachineTypeChildren(node *TreeNode, children []*TreeNode) {
-	if len(children) > 0 {
-		sort.Slice(children, func(i, j int) bool {
-			return children[i].Label < children[j].Label
-		})
-	}
+		if len(children) > 0 {
+			sort.Slice(children, func(i, j int) bool {
+				return children[i].Label < children[j].Label
+			})
+		}
 	filteredChildren := filterEmptyLabelNodes(children)
 	node.Children = filteredChildren
 }
@@ -169,7 +172,7 @@ func loadResourceTypeFolderChildren(node *TreeNode, appState *AppState, ctx cont
 	
 	// List all resources of this type
 	md := resource.NewMetadata(omniresources.DefaultNamespace, resourceType, "", resource.VersionUndefined)
-	list, err := appState.stateClient.List(ctx, md)
+	list, err := debugStateList(ctx, appState.stateClient, md)
 	if err != nil {
 		slog.Error("Failed to list resources", "resource_type", resourceType, "error", err)
 		return
@@ -233,7 +236,7 @@ func loadMachineSetsForCluster(ctx context.Context, clusterID string, appState *
 	machineSetIDs := make(map[string]bool)
 	
 	machineSetMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetType, "", resource.VersionUndefined)
-	machineSetList, err := appState.stateClient.List(ctx, machineSetMD)
+	machineSetList, err := debugStateList(ctx, appState.stateClient, machineSetMD)
 	if err != nil {
 		return machineSetNodes, machineSetIDs
 	}
@@ -266,7 +269,7 @@ func loadOrphanedClusterMachines(ctx context.Context, clusterID string, appState
 	children := make([]*TreeNode, 0)
 	
 	clusterMachineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineType, "", resource.VersionUndefined)
-	clusterMachineList, err := appState.stateClient.List(ctx, clusterMachineMD)
+	clusterMachineList, err := debugStateList(ctx, appState.stateClient, clusterMachineMD)
 	if err != nil {
 		return children
 	}
@@ -311,7 +314,7 @@ func loadKubernetesVersionForCluster(ctx context.Context, node *TreeNode, appSta
 	}
 	
 	kvMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubernetesVersionType, kv, resource.VersionUndefined)
-	kvRes, err := appState.stateClient.Get(ctx, kvMD)
+	kvRes, err := debugStateGet(ctx, appState.stateClient, kvMD)
 	if err != nil {
 		return nil
 	}
@@ -343,6 +346,13 @@ func loadClusterChildren(node *TreeNode, appState *AppState, ctx context.Context
 	// Filter out any nodes with empty labels
 	filteredChildren := filterEmptyLabelNodes(children)
 	node.Children = filteredChildren
+	
+	// Ensure all children are added to the node map
+	// (groupMachineSetsIntoFolder already adds its children, but we need to add orphaned cluster machines and kubernetes version)
+	for _, child := range filteredChildren {
+		addNodeToMap(child)
+	}
+	
 	slog.Info("Loaded cluster children", 
 		"cluster_id", clusterID,
 		"total_children", len(filteredChildren),
@@ -428,14 +438,14 @@ func loadMachineNodeForClusterMachine(node *TreeNode, appState *AppState, ctx co
 		return nil
 	}
 	
-	machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
-	machine, err := appState.stateClient.Get(ctx, machineMD)
+		machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
+		machine, err := debugStateGet(ctx, appState.stateClient, machineMD)
 	if err != nil {
 		return nil
 	}
 	
-	resourceMap := resconverter.ToMap(machine)
-	enrichMachineResource(resourceMap, string(omni.MachineType), machineID, appState.stateClient, ctx, 0)
+			resourceMap := resconverter.ToMap(machine)
+			enrichMachineResource(resourceMap, string(omni.MachineType), machineID, appState.stateClient, ctx, 0)
 	return createResourceNodeFromMap(resourceMap, machineID, string(omni.MachineType))
 }
 
@@ -451,13 +461,13 @@ func loadClusterNodeForClusterMachine(node *TreeNode, appState *AppState, ctx co
 		return nil
 	}
 	
-	clusterMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterType, clusterID, resource.VersionUndefined)
-	cluster, err := appState.stateClient.Get(ctx, clusterMD)
+			clusterMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterType, clusterID, resource.VersionUndefined)
+			cluster, err := debugStateGet(ctx, appState.stateClient, clusterMD)
 	if err != nil {
 		return nil
 	}
 	
-	resourceMap := resconverter.ToMap(cluster)
+				resourceMap := resconverter.ToMap(cluster)
 	return createResourceNodeFromMap(resourceMap, clusterID, string(omni.ClusterType))
 }
 
@@ -473,13 +483,13 @@ func loadMachineSetNodeForClusterMachine(node *TreeNode, appState *AppState, ctx
 		return nil
 	}
 	
-	machineSetMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetType, machineSetID, resource.VersionUndefined)
-	machineSet, err := appState.stateClient.Get(ctx, machineSetMD)
+			machineSetMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetType, machineSetID, resource.VersionUndefined)
+			machineSet, err := debugStateGet(ctx, appState.stateClient, machineSetMD)
 	if err != nil {
 		return nil
 	}
 	
-	resourceMap := resconverter.ToMap(machineSet)
+				resourceMap := resconverter.ToMap(machineSet)
 	return createResourceNodeFromMap(resourceMap, machineSetID, string(omni.MachineSetType))
 }
 
@@ -489,7 +499,7 @@ func loadClusterMachineChildren(node *TreeNode, appState *AppState, ctx context.
 	// Find the Machine for this ClusterMachine
 	if machineNode := loadMachineNodeForClusterMachine(node, appState, ctx); machineNode != nil {
 		children = append(children, machineNode)
-	}
+			}
 	
 	// Find the Cluster for this ClusterMachine (from labels)
 	if clusterNode := loadClusterNodeForClusterMachine(node, appState, ctx); clusterNode != nil {
@@ -511,7 +521,7 @@ func loadClusterMachineChildren(node *TreeNode, appState *AppState, ctx context.
 // loadClusterMachineForMachine loads ClusterMachine node with its children for a given machine
 func loadClusterMachineForMachine(ctx context.Context, machineID string, appState *AppState) *TreeNode {
 	clusterMachineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineType, machineID, resource.VersionUndefined)
-	cm, err := appState.stateClient.Get(ctx, clusterMachineMD)
+	cm, err := debugStateGet(ctx, appState.stateClient, clusterMachineMD)
 	if err != nil {
 		slog.Debug("ClusterMachine not found for machine", "machine_id", machineID, "error", err)
 		return nil
@@ -532,7 +542,7 @@ func loadClusterMachineForMachine(ctx context.Context, machineID string, appStat
 		// If label is still empty after creation, use a fallback
 		if clusterMachineID != "" {
 			childNode.Label = fmt.Sprintf(clusterMachineLabelPrefix, clusterMachineID)
-		} else {
+	} else {
 			childNode.Label = fmt.Sprintf(clusterMachineLabelPrefix, machineID)
 		}
 	} else {
@@ -577,7 +587,7 @@ func loadClusterMachineChildrenFromMap(ctx context.Context, resourceMap map[stri
 // loadMachineNode loads a Machine node
 func loadMachineNode(ctx context.Context, machineID string, appState *AppState) *TreeNode {
 	machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
-	machine, err := appState.stateClient.Get(ctx, machineMD)
+	machine, err := debugStateGet(ctx, appState.stateClient, machineMD)
 	if err != nil {
 		return nil
 	}
@@ -593,7 +603,7 @@ func loadClusterNodeFromLabels(ctx context.Context, labels map[string]interface{
 		return nil
 	}
 	clusterMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterType, clusterID, resource.VersionUndefined)
-	cluster, err := appState.stateClient.Get(ctx, clusterMD)
+	cluster, err := debugStateGet(ctx, appState.stateClient, clusterMD)
 	if err != nil {
 		return nil
 	}
@@ -608,7 +618,7 @@ func loadMachineSetNodeFromLabels(ctx context.Context, labels map[string]interfa
 		return nil
 	}
 	machineSetMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetType, machineSetID, resource.VersionUndefined)
-	machineSet, err := appState.stateClient.Get(ctx, machineSetMD)
+	machineSet, err := debugStateGet(ctx, appState.stateClient, machineSetMD)
 	if err != nil {
 		return nil
 	}
@@ -621,7 +631,7 @@ func loadMachineSetNodeFromLabels(ctx context.Context, labels map[string]interfa
 // loadMachineStatusNode loads MachineStatus node for a machine
 func loadMachineStatusNode(ctx context.Context, machineID string, appState *AppState) *TreeNode {
 	machineStatusMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineStatusType, machineID, resource.VersionUndefined)
-	ms, err := appState.stateClient.Get(ctx, machineStatusMD)
+	ms, err := debugStateGet(ctx, appState.stateClient, machineStatusMD)
 	if err != nil {
 		slog.Debug("MachineStatus not found", "machine_id", machineID, "error", err)
 		return nil
@@ -647,10 +657,10 @@ func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context
 	// Load ClusterMachine (reverse lookup)
 	clusterMachineNode := loadClusterMachineForMachine(ctx, machineID, appState)
 	if clusterMachineNode != nil {
-		if clusterMachineNode.Label == "" {
-			slog.Warn("ClusterMachine node has empty label", "machine_id", machineID)
+		if showEmptyLabelNodes || clusterMachineNode.Label != "" {
+		children = append(children, clusterMachineNode)
 		} else {
-			children = append(children, clusterMachineNode)
+			slog.Warn("ClusterMachine node has empty label", "machine_id", machineID)
 		}
 	} else {
 		slog.Debug("No ClusterMachine found for machine", "machine_id", machineID)
@@ -659,10 +669,10 @@ func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context
 	// Load MachineStatus
 	machineStatusNode := loadMachineStatusNode(ctx, machineID, appState)
 	if machineStatusNode != nil {
-		if machineStatusNode.Label == "" {
-			slog.Warn("MachineStatus node has empty label", "machine_id", machineID)
+		if showEmptyLabelNodes || machineStatusNode.Label != "" {
+		children = append(children, machineStatusNode)
 		} else {
-			children = append(children, machineStatusNode)
+			slog.Warn("MachineStatus node has empty label", "machine_id", machineID)
 		}
 	} else {
 		slog.Debug("No MachineStatus found for machine", "machine_id", machineID)
@@ -671,7 +681,7 @@ func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context
 	// Add link nodes: Labels, Extensions, Upgrade Status, Metrics, Config Diff
 	machineLinks := createMachineActionLinkNodes(machineID, appState)
 	for _, link := range machineLinks {
-		if link.Label != "" {
+		if showEmptyLabelNodes || link.Label != "" {
 			children = append(children, link)
 		}
 	}
@@ -857,7 +867,7 @@ func loadMachineByID(machineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
 
-	machine, err := appState.stateClient.Get(ctx, md)
+	machine, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		// Format directives are in translation file: "machine.error.extensions" = "Error loading extensions for machine %s: %v"
 		appState.statusLabel.SetText(i18n.T("machine.error.extensions", machineID, err)) //nolint
@@ -898,7 +908,7 @@ func loadMachinesByMachineSet(machineSetID string, appState *AppState) {
 func findClusterMachinesByMachineSet(ctx context.Context, machineSetID string, appState *AppState) []map[string]interface{} {
 	resources := make([]map[string]interface{}, 0)
 	clusterMachineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineType, "", resource.VersionUndefined)
-	list, err := appState.stateClient.List(ctx, clusterMachineMD)
+	list, err := debugStateList(ctx, appState.stateClient, clusterMachineMD)
 	if err != nil {
 		return resources
 	}
@@ -957,7 +967,7 @@ func findResourcesByK8sVersion(ctx context.Context, version string, appState *Ap
 func findClustersByK8sVersion(ctx context.Context, version string, appState *AppState) []map[string]interface{} {
 	resources := make([]map[string]interface{}, 0)
 	clusterMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterType, "", resource.VersionUndefined)
-	list, err := appState.stateClient.List(ctx, clusterMD)
+	list, err := debugStateList(ctx, appState.stateClient, clusterMD)
 	if err != nil {
 		return resources
 	}
@@ -978,7 +988,7 @@ func findClustersByK8sVersion(ctx context.Context, version string, appState *App
 func findClusterMachinesByK8sVersion(ctx context.Context, version string, appState *AppState) []map[string]interface{} {
 	resources := make([]map[string]interface{}, 0)
 	clusterMachineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineType, "", resource.VersionUndefined)
-	list, err := appState.stateClient.List(ctx, clusterMachineMD)
+	list, err := debugStateList(ctx, appState.stateClient, clusterMachineMD)
 	if err != nil {
 		return resources
 	}
@@ -1000,7 +1010,7 @@ func findClusterMachinesByK8sVersion(ctx context.Context, version string, appSta
 func loadClusterStatus(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster status: %v", err))
 		return
@@ -1013,7 +1023,7 @@ func loadClusterStatus(clusterID string, appState *AppState) {
 func loadClusterMetrics(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMetricsType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster metrics: %v", err))
 		return
@@ -1026,7 +1036,7 @@ func loadClusterMetrics(clusterID string, appState *AppState) {
 func loadClusterBootstrap(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterBootstrapStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster bootstrap: %v", err))
 		return
@@ -1039,7 +1049,7 @@ func loadClusterBootstrap(clusterID string, appState *AppState) {
 func loadClusterKubeconfig(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubeconfigType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading kubeconfig: %v", err))
 		return
@@ -1052,7 +1062,7 @@ func loadClusterKubeconfig(clusterID string, appState *AppState) {
 func loadClusterKubernetesUpgrade(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubernetesUpgradeStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading Kubernetes upgrade: %v", err))
 		return
@@ -1065,7 +1075,7 @@ func loadClusterKubernetesUpgrade(clusterID string, appState *AppState) {
 func loadClusterTalosUpgrade(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.TalosUpgradeStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading Talos upgrade: %v", err))
 		return
@@ -1078,7 +1088,7 @@ func loadClusterTalosUpgrade(clusterID string, appState *AppState) {
 func loadClusterEndpoints(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterEndpointType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster endpoints: %v", err))
 		return
@@ -1091,7 +1101,7 @@ func loadClusterEndpoints(clusterID string, appState *AppState) {
 func loadClusterKubernetesStatus(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubernetesStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading Kubernetes status: %v", err))
 		return
@@ -1104,7 +1114,7 @@ func loadClusterKubernetesStatus(clusterID string, appState *AppState) {
 func loadClusterControlPlaneStatus(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ControlPlaneStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading control plane status: %v", err))
 		return
@@ -1117,7 +1127,7 @@ func loadClusterControlPlaneStatus(clusterID string, appState *AppState) {
 func loadClusterDiagnostics(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterDiagnosticsType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster diagnostics: %v", err))
 		return
@@ -1130,7 +1140,7 @@ func loadClusterDiagnostics(clusterID string, appState *AppState) {
 func loadClusterDestroyStatus(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterDestroyStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster destroy status: %v", err))
 		return
@@ -1143,7 +1153,7 @@ func loadClusterDestroyStatus(clusterID string, appState *AppState) {
 func loadClusterWorkloadProxyStatus(clusterID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterWorkloadProxyStatusType, clusterID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading workload proxy status: %v", err))
 		return
@@ -1157,7 +1167,7 @@ func loadClusterWorkloadProxyStatus(clusterID string, appState *AppState) {
 func loadMachineLabels(machineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineLabelsType, machineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine labels: %v", err))
 		return
@@ -1170,7 +1180,7 @@ func loadMachineLabels(machineID string, appState *AppState) {
 func loadMachineExtensions(machineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineExtensionsType, machineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine extensions: %v", err))
 		return
@@ -1183,7 +1193,7 @@ func loadMachineExtensions(machineID string, appState *AppState) {
 func loadMachineUpgradeStatus(machineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineUpgradeStatusType, machineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine upgrade status: %v", err))
 		return
@@ -1196,7 +1206,7 @@ func loadMachineUpgradeStatus(machineID string, appState *AppState) {
 func loadMachineMetrics(machineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineStatusMetricsType, machineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine metrics: %v", err))
 		return
@@ -1209,7 +1219,7 @@ func loadMachineMetrics(machineID string, appState *AppState) {
 func loadMachineConfigDiff(machineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineConfigDiffType, machineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine config diff: %v", err))
 		return
@@ -1223,7 +1233,7 @@ func loadMachineConfigDiff(machineID string, appState *AppState) {
 func loadMachineSetStatus(machineSetID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetStatusType, machineSetID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine set status: %v", err))
 		return
@@ -1236,7 +1246,7 @@ func loadMachineSetStatus(machineSetID string, appState *AppState) {
 func loadMachineSetDestroyStatus(machineSetID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetDestroyStatusType, machineSetID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine set destroy status: %v", err))
 		return
@@ -1250,7 +1260,7 @@ func loadMachineSetDestroyStatus(machineSetID string, appState *AppState) {
 func loadClusterMachineStatus(clusterMachineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineStatusType, clusterMachineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine status: %v", err))
 		return
@@ -1263,7 +1273,7 @@ func loadClusterMachineStatus(clusterMachineID string, appState *AppState) {
 func loadClusterMachineConfigStatus(clusterMachineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineConfigStatusType, clusterMachineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine config status: %v", err))
 		return
@@ -1276,7 +1286,7 @@ func loadClusterMachineConfigStatus(clusterMachineID string, appState *AppState)
 func loadClusterMachineTalosVersion(clusterMachineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineTalosVersionType, clusterMachineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine Talos version: %v", err))
 		return
@@ -1289,7 +1299,7 @@ func loadClusterMachineTalosVersion(clusterMachineID string, appState *AppState)
 func loadClusterMachineConfig(clusterMachineID string, appState *AppState) {
 	ctx := context.Background()
 	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineConfigType, clusterMachineID, resource.VersionUndefined)
-	res, err := appState.stateClient.Get(ctx, md)
+	res, err := debugStateGet(ctx, appState.stateClient, md)
 	if err != nil {
 		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine config: %v", err))
 		return
@@ -1299,19 +1309,101 @@ func loadClusterMachineConfig(clusterMachineID string, appState *AppState) {
 	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster machine config: %s", clusterMachineID))
 }
 
-func main() {
-	// Parse command-line flags
-	ignoreEnv := flag.Bool("ignore-env", false, "Ignore environment variables and use only settings file")
-	flag.Parse()
+// showEmptyLabelNodes controls whether nodes with empty labels are filtered out
+var showEmptyLabelNodes = false
+
+// logStartupBanner logs a startup banner to mark the beginning of a new execution
+// All output is structured JSON for consistency
+func logStartupBanner(version string, ignoreEnv bool, showEmptyLabels bool, grpcDebugLevel int) {
+	startTime := time.Now().Format(time.RFC3339)
 	
-	// Initialize structured logger with JSON output to stderr
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+	// Log banner as structured JSON for programmatic access and consistency
+	slog.Info("Application Startup Banner",
+		"separator", "==================================================================================",
+		"application", "Omni API GUI Application",
+		"version", version,
+		"started_at", startTime,
+		"ignore_env", ignoreEnv,
+		"show_empty_labels", showEmptyLabels,
+		"grpc_debug_level", grpcDebugLevel)
+}
+
+// setupLogging configures logging to write to both console (stderr) and a log file
+// Returns the log file handle and any error encountered
+func setupLogging() (*os.File, error) {
+	// Get log file path in the current execution directory
+	execDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+	
+	logPath := filepath.Join(execDir, "omni-api.log")
+	
+	// Open log file in append mode (create if it doesn't exist)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open log file: %w", err)
+	}
+	
+	// Create a multi-writer that writes to both stderr and the log file
+	multiWriter := io.MultiWriter(os.Stderr, logFile)
+	
+	// Initialize structured logger with JSON output to both console and file
+	logger := slog.New(slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
+		Level:     slog.LevelInfo,
 		AddSource: true,
 	}))
 	slog.SetDefault(logger)
 	
-	slog.Info("Starting Omni GUI Application", "version", Version, "ignoreEnv", *ignoreEnv)
+	slog.Info("Logging initialized", "log_file", logPath)
+	
+	return logFile, nil
+}
+
+func main() {
+	// Load settings to get default values
+	settings, err := omniclient.LoadSettings(false)
+	ignoreEnvFromSettings := false
+	grpcDebugLevelFromSettings := 0
+	if err == nil {
+		if settings.ShowEmptyLabels {
+			showEmptyLabelNodes = true
+		}
+		ignoreEnvFromSettings = settings.IgnoreEnv
+		grpcDebugLevelFromSettings = settings.GrpcDebugLevel
+	}
+	
+	// Parse command-line flags (command-line flags take precedence over settings)
+	ignoreEnv := flag.Bool("ignore-env", ignoreEnvFromSettings, "Ignore environment variables and use only settings file")
+	showEmptyLabels := flag.Bool("show-empty-labels", showEmptyLabelNodes, "Show nodes with empty labels in the tree (disable filtering)")
+	grpcDebugLevel := flag.Int("grpc-debug", grpcDebugLevelFromSettings, "gRPC debug level: 0=disabled, 1=query dumps, 2=query+response, 3=query+response+UI dumps")
+	flag.Parse()
+	
+	// Set global flag for filtering (command-line flag takes precedence)
+	showEmptyLabelNodes = *showEmptyLabels
+	setGrpcDebugLevel(*grpcDebugLevel)
+	
+	// Setup logging to both console and file
+	logFile, err := setupLogging()
+	if err != nil {
+		// If we can't set up file logging, at least log to stderr as JSON
+		logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+			Level:     slog.LevelInfo,
+			AddSource: true,
+		}))
+		slog.SetDefault(logger)
+		slog.Warn("Failed to set up file logging, using stderr only", "error", err)
+	} else {
+		// Close log file on exit
+		defer logFile.Close()
+	}
+	
+	// Log startup banner
+	logStartupBanner(Version, *ignoreEnv, showEmptyLabelNodes, *grpcDebugLevel)
+	
+	slog.Info("Empty label filtering", "filtering_enabled", !showEmptyLabelNodes, "show_empty_labels", showEmptyLabelNodes)
+	slog.Info("Ignore environment variables", "ignore_env", *ignoreEnv)
+	slog.Info("gRPC debug level", "level", *grpcDebugLevel)
 	
 	slog.Info("Initializing i18n", "language", "en")
 	if err := i18n.Init("en"); err != nil {
@@ -1357,6 +1449,8 @@ func main() {
 	statusLabel := widget.NewLabel(i18n.T("app.ready"))
 
 	burgerMenu := createBurgerMenu(myWindow, appState)
+	refreshButton := createRefreshButton(appState)
+	settingsButton := createSettingsButton(myWindow, appState)
 
 	setupAppState(appState, resourceTree, nil, statusLabel, detailComponents)
 	
@@ -1370,7 +1464,7 @@ func main() {
 		addNodeToMap(appState.treeRoot)
 	}
 
-	mainContent := createMainLayout(burgerMenu, resourceTree, detailComponents, statusLabel)
+	mainContent := createMainLayout(burgerMenu, refreshButton, settingsButton, resourceTree, detailComponents, statusLabel)
 
 	myWindow.SetContent(mainContent)
 	slog.Info("Window content set")

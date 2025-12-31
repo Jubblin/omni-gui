@@ -17,12 +17,15 @@ const (
 
 // Settings holds application settings
 type Settings struct {
-	AuthMethod      string `json:"auth_method"`       // "service_account" or "oidc"
-	Endpoint        string `json:"endpoint"`          // Omni endpoint URL
-	OIDCIssuerURL   string `json:"oidc_issuer_url"`   // OIDC issuer URL (optional, auto-derived if empty)
-	OIDCClientID    string `json:"oidc_client_id"`    // OIDC client ID
+	AuthMethod       string `json:"auth_method"`        // "service_account" or "oidc"
+	Endpoint         string `json:"endpoint"`           // Omni endpoint URL
+	OIDCIssuerURL    string `json:"oidc_issuer_url"`    // OIDC issuer URL (optional, auto-derived if empty)
+	OIDCClientID     string `json:"oidc_client_id"`     // OIDC client ID
 	OIDCClientSecret string `json:"oidc_client_secret"` // OIDC client secret (stored in plain text - security consideration)
-	ServiceAccount  string `json:"service_account"`   // Service account key (stored in plain text - security consideration)
+	ServiceAccount   string `json:"service_account"`   // Service account key (stored in plain text - security consideration)
+	ShowEmptyLabels  bool   `json:"show_empty_labels"`  // Show nodes with empty labels in the tree (disable filtering)
+	IgnoreEnv        bool   `json:"ignore_env"`         // Ignore environment variables and use only settings file
+	GrpcDebugLevel   int    `json:"grpc_debug_level"`   // gRPC debug level: 0=disabled, 1=query dumps, 2=query+response, 3=query+response+UI dumps
 }
 
 // GetSettingsPath returns the path to the settings file
@@ -55,8 +58,16 @@ func LoadSettings(ignoreEnv bool) (*Settings, error) {
 	if err == nil {
 		var fileSettings Settings
 		if err := json.Unmarshal(data, &fileSettings); err == nil {
+			// Load all fields from file
 			settings.AuthMethod = fileSettings.AuthMethod
 			settings.Endpoint = fileSettings.Endpoint
+			settings.ShowEmptyLabels = fileSettings.ShowEmptyLabels
+			settings.IgnoreEnv = fileSettings.IgnoreEnv
+			settings.GrpcDebugLevel = fileSettings.GrpcDebugLevel
+			settings.ServiceAccount = fileSettings.ServiceAccount
+			settings.OIDCIssuerURL = fileSettings.OIDCIssuerURL
+			settings.OIDCClientID = fileSettings.OIDCClientID
+			settings.OIDCClientSecret = fileSettings.OIDCClientSecret
 		}
 	}
 	

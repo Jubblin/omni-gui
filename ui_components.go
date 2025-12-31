@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	omniclient "github.com/jubblin/omni-api/internal/client"
@@ -50,14 +51,14 @@ func setupAppState(appState *AppState, resourceTree *widget.Tree, resourceIDInpu
 
 // createBurgerMenu creates the hamburger menu button
 func createBurgerMenu(myWindow fyne.Window, appState *AppState) *widget.Button {
-	burgerMenu := widget.NewButton("☰ Menu", nil)
+	burgerMenu := widget.NewButton("☰", nil)
 	
 	menuItems := []*fyne.MenuItem{
 		fyne.NewMenuItem("Refresh", func() {
 			refreshTreeData(appState)
 		}),
 		fyne.NewMenuItem("Settings", func() {
-			showSettingsPage(myWindow)
+			showSettingsPage(myWindow, appState)
 		}),
 	}
 
@@ -70,6 +71,22 @@ func createBurgerMenu(myWindow fyne.Window, appState *AppState) *widget.Button {
 	}
 
 	return burgerMenu
+}
+
+// createRefreshButton creates a refresh button with circular arrow icon
+func createRefreshButton(appState *AppState) *widget.Button {
+	refreshButton := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
+		refreshTreeData(appState)
+	})
+	return refreshButton
+}
+
+// createSettingsButton creates a settings button with cog icon
+func createSettingsButton(myWindow fyne.Window, appState *AppState) *widget.Button {
+	settingsButton := widget.NewButtonWithIcon("", theme.SettingsIcon(), func() {
+		showSettingsPage(myWindow, appState)
+	})
+	return settingsButton
 }
 
 // createLanguageSelector creates a language selection widget
@@ -119,13 +136,21 @@ func createEntryWithFallback(settingsValue string, envVars ...string) *widget.En
 func createAuthFields(settings *omniclient.Settings) (*widget.Entry, *widget.Entry, *widget.Entry, *widget.Entry, *widget.Select, *fyne.Container, *fyne.Container) {
 	// Service Account fields
 	serviceAccountLabel := widget.NewLabel("Service Account Key:")
-	serviceAccountEntry := createEntryWithFallback(
-		settings.ServiceAccount,
-		"OMNI_SERVICE_ACCOUNT",
-		"OMNI_SERVICE_ACCOUNT_KEY",
-	)
+	serviceAccountEntry := widget.NewMultiLineEntry()
+	value := settings.ServiceAccount
+	if value == "" {
+		if v := os.Getenv("OMNI_SERVICE_ACCOUNT"); v != "" {
+			value = v
+		} else if v := os.Getenv("OMNI_SERVICE_ACCOUNT_KEY"); v != "" {
+			value = v
+		}
+	}
+	if value != "" {
+		serviceAccountEntry.SetText(value)
+	}
 	serviceAccountEntry.SetPlaceHolder("Base64 encoded service account key")
 	serviceAccountEntry.Password = true
+	serviceAccountEntry.Wrapping = fyne.TextWrapWord
 
 	// OIDC fields
 	oidcIssuerLabel := widget.NewLabel("OIDC Issuer URL:")
@@ -137,16 +162,35 @@ func createAuthFields(settings *omniclient.Settings) (*widget.Entry, *widget.Ent
 	oidcClientIDEntry.SetPlaceHolder("your-client-id")
 
 	oidcClientSecretLabel := widget.NewLabel("OIDC Client Secret:")
-	oidcClientSecretEntry := createEntryWithFallback(settings.OIDCClientSecret, "OMNI_OIDC_CLIENT_SECRET")
+	oidcClientSecretEntry := widget.NewMultiLineEntry()
+	secretValue := settings.OIDCClientSecret
+	if secretValue == "" {
+		if v := os.Getenv("OMNI_OIDC_CLIENT_SECRET"); v != "" {
+			secretValue = v
+		}
+	}
+	if secretValue != "" {
+		oidcClientSecretEntry.SetText(secretValue)
+	}
 	oidcClientSecretEntry.SetPlaceHolder("your-client-secret")
 	oidcClientSecretEntry.Password = true
+	oidcClientSecretEntry.Wrapping = fyne.TextWrapWord
 
-	// Containers
-	serviceAccountContainer := container.NewVBox(serviceAccountLabel, serviceAccountEntry)
+	// Containers - use Border layout to make multi-line entries expand to fill available space
+	// Service Account: label at top, entry expands to fill remaining space
+	serviceAccountContainer := container.NewBorder(
+		serviceAccountLabel, nil, nil, nil,
+		serviceAccountEntry, // Entry expands to fill available space
+	)
+	// OIDC: label at top, entry expands to fill remaining space after other fields
+	oidcSecretContainer := container.NewBorder(
+		oidcClientSecretLabel, nil, nil, nil,
+		oidcClientSecretEntry, // Entry expands to fill available space
+	)
 	oidcContainer := container.NewVBox(
 		oidcIssuerLabel, oidcIssuerEntry,
 		oidcClientIDLabel, oidcClientIDEntry,
-		oidcClientSecretLabel, oidcClientSecretEntry,
+		oidcSecretContainer, // Multi-line secret entry with label
 	)
 
 	// Auth method selection

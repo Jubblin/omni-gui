@@ -11,8 +11,9 @@ import (
 )
 
 // createMainLayout creates the main application layout
-func createMainLayout(burgerMenu *widget.Button, resourceTree *widget.Tree, detailComponents *DetailComponents, statusLabel *widget.Label) *container.Split {
-	topBar := container.NewBorder(nil, nil, nil, nil, burgerMenu)
+func createMainLayout(burgerMenu *widget.Button, refreshButton *widget.Button, settingsButton *widget.Button, resourceTree *widget.Tree, detailComponents *DetailComponents, statusLabel *widget.Label) *container.Split {
+	// Top bar with three buttons: burger menu, refresh, settings (all in top-left corner)
+	topBar := container.NewHBox(burgerMenu, refreshButton, settingsButton)
 	// Format directive is in translation file: "app.connected" = "Connected to: %s"
 	infoLabel := widget.NewLabel(i18n.T("app.connected", os.Getenv("OMNI_ENDPOINT"))) //nolint
 	infoLabel.Wrapping = fyne.TextWrapWord

@@ -69,4 +69,7 @@ type SettingsFormFields struct {
 	OIDCIssuerEntry       *widget.Entry
 	OIDCClientIDEntry     *widget.Entry
 	OIDCClientSecretEntry *widget.Entry
+	ShowEmptyLabelsCheck  *widget.Check
+	IgnoreEnvCheck        *widget.Check
+	GrpcDebugLevelSelect  *widget.Select
 }

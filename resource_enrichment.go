@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -14,8 +15,18 @@ func buildMachineStatusInfo(ms *omni.MachineStatus) map[string]interface{} {
 	statusInfo := make(map[string]interface{})
 	spec := ms.TypedSpec().Value
 	statusInfo["talos_version"] = spec.TalosVersion
+	statusInfo["initial_talos_version"] = spec.InitialTalosVersion
 	statusInfo["role"] = spec.Role.String()
-	statusInfo["maintenance"] = spec.Maintenance
+	statusInfo["maintenance"] = strconv.FormatBool(spec.Maintenance)
+	statusInfo["connected"] = strconv.FormatBool(spec.Connected)
+	statusInfo["secure_boot"] = strconv.FormatBool(spec.SecurityState.SecureBoot)
+	
+	statusInfo["kernel_cmdline"] = spec.KernelCmdline
+
+	if spec.Cluster != "" {
+		statusInfo["cluster"] = spec.Cluster
+	}
+	
 	if spec.LastError != "" {
 		statusInfo["last_error"] = spec.LastError
 	}

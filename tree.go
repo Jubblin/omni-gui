@@ -75,8 +75,8 @@ func getChildIDs(id widget.TreeNodeID) []widget.TreeNodeID {
 	}
 	childIDs := make([]widget.TreeNodeID, 0, len(node.Children))
 	for _, child := range node.Children {
-		// Skip nodes with empty labels to avoid blank leaves
-		if child.Label != "" {
+		// Skip nodes with empty labels to avoid blank leaves (unless flag is set)
+		if showEmptyLabelNodes || child.Label != "" {
 			childIDs = append(childIDs, child.ID)
 		}
 	}
@@ -154,8 +154,8 @@ func updateTreeNodeWidget(id widget.TreeNodeID, branch bool, obj fyne.CanvasObje
 		return
 	}
 	
-	// Skip rendering nodes with empty labels to avoid blank leaves
-	if node.Label == "" {
+	// Skip rendering nodes with empty labels to avoid blank leaves (unless flag is set)
+	if !showEmptyLabelNodes && node.Label == "" {
 		icon.SetResource(nil)
 		label.SetText("")
 		return
@@ -359,8 +359,19 @@ func setupTreeSelection(resourceTree *widget.Tree, appState *AppState) {
 	}
 }
 
-// filterEmptyLabelNodes filters out nodes with empty labels
+// filterEmptyLabelNodes filters out nodes with empty labels (unless flag is set)
 func filterEmptyLabelNodes(nodes []*TreeNode) []*TreeNode {
+	if showEmptyLabelNodes {
+		// If flag is set, only filter out nil nodes
+		filtered := make([]*TreeNode, 0, len(nodes))
+		for _, node := range nodes {
+			if node != nil {
+				filtered = append(filtered, node)
+			}
+		}
+		return filtered
+	}
+	// Default behavior: filter out nodes with empty labels
 	filtered := make([]*TreeNode, 0, len(nodes))
 	for _, node := range nodes {
 		if node != nil && node.Label != "" {
