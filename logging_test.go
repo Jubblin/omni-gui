@@ -409,7 +409,7 @@ func TestActualLogFile(t *testing.T) {
 	execDir, err := os.Getwd()
 	require.NoError(t, err, "Should get current working directory")
 	
-	logPath := filepath.Join(execDir, "omni-api.log")
+	logPath := filepath.Join(execDir, "omni-api.json")
 	
 	// Check if log file exists (it may not exist if application hasn't been run)
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {

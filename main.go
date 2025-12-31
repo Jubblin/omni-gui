@@ -80,13 +80,10 @@ func loadNodeChildren(node *TreeNode, appState *AppState, ctx context.Context) {
 	case omni.ClusterMachineType:
 		loadClusterMachineChildren(node, appState, ctx, resourceID)
 	case omni.MachineType:
-		loadMachineChildren(node, appState, ctx, resourceID)
+		loadMachineChildren(node, appState, ctx, resourceID, false)
 	case omni.KubernetesVersionType:
 		loadKubernetesVersionChildren(node, appState, ctx, resourceID)
 	}
-	
-	// Add link nodes as children after loading regular children
-	addLinkNodes(node, appState, ctx)
 }
 
 // convertResourcesToNodes converts a list of resources to tree nodes
@@ -361,58 +358,6 @@ func loadClusterChildren(node *TreeNode, appState *AppState, ctx context.Context
 }
 
 
-func createLinkNodeWithAction(id, label, linkType string, action func()) *TreeNode {
-	linkActionMap[id] = action
-	return createLinkNode("link-"+linkType, label, id, action)
-}
-
-func createActionLinkNodes(clusterID string, appState *AppState) []*TreeNode {
-	links := []*TreeNode{
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-status-%s", clusterID), i18n.T("link.cluster.status"), "cluster-status", func() { loadClusterStatus(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-metrics-%s", clusterID), i18n.T("link.cluster.metrics"), "cluster-metrics", func() { loadClusterMetrics(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-bootstrap-%s", clusterID), i18n.T("link.cluster.bootstrap"), "cluster-bootstrap", func() { loadClusterBootstrap(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-kubeconfig-%s", clusterID), i18n.T("link.cluster.kubeconfig"), "cluster-kubeconfig", func() { loadClusterKubeconfig(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-k8s-upgrade-%s", clusterID), i18n.T("link.cluster.k8s_upgrade"), "cluster-k8s-upgrade", func() { loadClusterKubernetesUpgrade(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-talos-upgrade-%s", clusterID), i18n.T("link.cluster.talos_upgrade"), "cluster-talos-upgrade", func() { loadClusterTalosUpgrade(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-endpoints-%s", clusterID), i18n.T("link.cluster.endpoints"), "cluster-endpoints", func() { loadClusterEndpoints(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-k8s-status-%s", clusterID), i18n.T("link.cluster.k8s_status"), "cluster-k8s-status", func() { loadClusterKubernetesStatus(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-controlplane-%s", clusterID), i18n.T("link.cluster.controlplane"), "cluster-controlplane", func() { loadClusterControlPlaneStatus(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-diagnostics-%s", clusterID), i18n.T("link.cluster.diagnostics"), "cluster-diagnostics", func() { loadClusterDiagnostics(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-destroy-%s", clusterID), i18n.T("link.cluster.destroy"), "cluster-destroy", func() { loadClusterDestroyStatus(clusterID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-cluster-workload-proxy-%s", clusterID), i18n.T("link.cluster.workload_proxy"), "cluster-workload-proxy", func() { loadClusterWorkloadProxyStatus(clusterID, appState) }),
-	}
-	return links
-}
-
-func createMachineActionLinkNodes(machineID string, appState *AppState) []*TreeNode {
-	links := []*TreeNode{
-		createLinkNodeWithAction(fmt.Sprintf("link-machine-labels-%s", machineID), i18n.T("link.machine.labels"), "machine-labels", func() { loadMachineLabels(machineID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-machine-extensions-%s", machineID), i18n.T("link.machine.extensions"), "machine-extensions", func() { loadMachineExtensions(machineID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-machine-upgrade-%s", machineID), i18n.T("link.machine.upgrade_status"), "machine-upgrade", func() { loadMachineUpgradeStatus(machineID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-machine-metrics-%s", machineID), i18n.T("link.machine.metrics"), "machine-metrics", func() { loadMachineMetrics(machineID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-machine-config-diff-%s", machineID), i18n.T("link.machine.config_diff"), "machine-config-diff", func() { loadMachineConfigDiff(machineID, appState) }),
-	}
-	return links
-}
-
-func createMachineSetActionLinkNodes(machineSetID string, appState *AppState) []*TreeNode {
-	links := []*TreeNode{
-		createLinkNodeWithAction(fmt.Sprintf("link-machineset-status-%s", machineSetID), i18n.T("link.machineset.status"), "machineset-status", func() { loadMachineSetStatus(machineSetID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-machineset-destroy-%s", machineSetID), i18n.T("link.machineset.destroy"), "machineset-destroy", func() { loadMachineSetDestroyStatus(machineSetID, appState) }),
-	}
-	return links
-}
-
-func createClusterMachineActionLinkNodes(clusterMachineID string, appState *AppState) []*TreeNode {
-	links := []*TreeNode{
-		createLinkNodeWithAction(fmt.Sprintf("link-clustermachine-status-%s", clusterMachineID), i18n.T("link.clustermachine.status"), "clustermachine-status", func() { loadClusterMachineStatus(clusterMachineID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-clustermachine-config-status-%s", clusterMachineID), i18n.T("link.clustermachine.config_status"), "clustermachine-config-status", func() { loadClusterMachineConfigStatus(clusterMachineID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-clustermachine-talos-version-%s", clusterMachineID), i18n.T("link.clustermachine.talos_version"), "clustermachine-talos-version", func() { loadClusterMachineTalosVersion(clusterMachineID, appState) }),
-		createLinkNodeWithAction(fmt.Sprintf("link-clustermachine-config-%s", clusterMachineID), i18n.T("link.clustermachine.config"), "clustermachine-config", func() { loadClusterMachineConfig(clusterMachineID, appState) }),
-	}
-	return links
-}
-
 func loadMachineSetChildren(node *TreeNode, appState *AppState, ctx context.Context, machineSetID string) {
 	children := make([]*TreeNode, 0)
 	
@@ -428,25 +373,26 @@ func loadMachineSetChildren(node *TreeNode, appState *AppState, ctx context.Cont
 	// Filter out any nodes with empty labels
 	filteredChildren := filterEmptyLabelNodes(children)
 	node.Children = filteredChildren
+	
+	// Ensure all children are added to the node map
+	for _, child := range filteredChildren {
+		addNodeToMap(child)
+	}
+	
 	slog.Info("Loaded MachineSet children", "machineset_id", machineSetID, "children_count", len(filteredChildren))
 }
 
 // loadMachineNodeForClusterMachine loads the Machine node for a ClusterMachine
+// This function uses loadMachineNode with skipClusterMachineChild=true to prevent circular references
 func loadMachineNodeForClusterMachine(node *TreeNode, appState *AppState, ctx context.Context) *TreeNode {
 	machineID, ok := node.Resource["machine_id"].(string)
 	if !ok || machineID == "" {
 		return nil
 	}
 	
-		machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
-		machine, err := debugStateGet(ctx, appState.stateClient, machineMD)
-	if err != nil {
-		return nil
-	}
-	
-			resourceMap := resconverter.ToMap(machine)
-			enrichMachineResource(resourceMap, string(omni.MachineType), machineID, appState.stateClient, ctx, 0)
-	return createResourceNodeFromMap(resourceMap, machineID, string(omni.MachineType))
+	// Use loadMachineNode with skipClusterMachineChild=true to prevent circular reference
+	// (Machine -> ClusterMachine -> Machine)
+	return loadMachineNode(ctx, machineID, appState, true)
 }
 
 // loadClusterNodeForClusterMachine loads the Cluster node for a ClusterMachine from labels
@@ -494,12 +440,65 @@ func loadMachineSetNodeForClusterMachine(node *TreeNode, appState *AppState, ctx
 }
 
 func loadClusterMachineChildren(node *TreeNode, appState *AppState, ctx context.Context, clusterMachineID string) {
+	// If children are already pre-loaded, use them instead of reloading
+	slog.Info("loadClusterMachineChildren called", 
+		"clustermachine_id", clusterMachineID,
+		"existing_children_count", len(node.Children),
+		"node_id", node.ID)
+	
+	if len(node.Children) > 0 {
+		slog.Info("ClusterMachine children already pre-loaded", "clustermachine_id", clusterMachineID, "children_count", len(node.Children))
+		// Log what children are pre-loaded
+		for i, child := range node.Children {
+			slog.Info("Pre-loaded child", 
+				"index", i,
+				"child_id", child.ID,
+				"child_type", child.Type,
+				"child_label", child.Label)
+		}
+		// Ensure all pre-loaded children are in the node map
+		for _, child := range node.Children {
+			addNodeToMap(child)
+		}
+		return
+	}
+	
+	slog.Info("No pre-loaded children found, loading ClusterMachine children", "clustermachine_id", clusterMachineID)
+	
 	children := make([]*TreeNode, 0)
+	
+	// Get machine_id from ClusterMachine resource
+	machineID, ok := node.Resource["machine_id"].(string)
+	if !ok || machineID == "" {
+		// Fallback: ClusterMachine ID is typically the same as Machine ID
+		machineID = clusterMachineID
+	}
 	
 	// Find the Machine for this ClusterMachine
 	if machineNode := loadMachineNodeForClusterMachine(node, appState, ctx); machineNode != nil {
 		children = append(children, machineNode)
-			}
+	}
+	
+	// Add MachineStatus (same ID as Machine)
+	machineStatusNode := loadMachineStatusNode(ctx, machineID, appState)
+	if machineStatusNode != nil {
+		if showEmptyLabelNodes || machineStatusNode.Label != "" {
+			children = append(children, machineStatusNode)
+			slog.Info("Added MachineStatus to ClusterMachine children", 
+				"machine_id", machineID,
+				"clustermachine_id", clusterMachineID,
+				"machinestatus_label", machineStatusNode.Label,
+				"machinestatus_id", machineStatusNode.ID)
+		} else {
+			slog.Warn("MachineStatus node has empty label, skipping", 
+				"machine_id", machineID,
+				"clustermachine_id", clusterMachineID)
+		}
+	} else {
+		slog.Debug("MachineStatus not found for ClusterMachine", 
+			"machine_id", machineID,
+			"clustermachine_id", clusterMachineID)
+	}
 	
 	// Find the Cluster for this ClusterMachine (from labels)
 	if clusterNode := loadClusterNodeForClusterMachine(node, appState, ctx); clusterNode != nil {
@@ -514,7 +513,27 @@ func loadClusterMachineChildren(node *TreeNode, appState *AppState, ctx context.
 	// Filter out any nodes with empty labels
 	filteredChildren := filterEmptyLabelNodes(children)
 	node.Children = filteredChildren
-	slog.Info("Loaded ClusterMachine children", "clustermachine_id", clusterMachineID, "children_count", len(filteredChildren))
+	
+	// Ensure all children are added to the node map
+	for _, child := range filteredChildren {
+		addNodeToMap(child)
+	}
+	
+	// Log what children were loaded
+	childList := make([]map[string]string, 0, len(filteredChildren))
+	for _, child := range filteredChildren {
+		childList = append(childList, map[string]string{
+			"label": child.Label,
+			"type":  child.Type,
+			"id":    child.ID,
+		})
+	}
+	
+	slog.Info("Loaded ClusterMachine children", 
+		"clustermachine_id", clusterMachineID, 
+		"children_count", len(filteredChildren),
+		"before_filter", len(children),
+		"children", childList)
 }
 
 
@@ -551,6 +570,22 @@ func loadClusterMachineForMachine(ctx context.Context, machineID string, appStat
 	
 	// Load ClusterMachine children
 	childNode.Children = loadClusterMachineChildrenFromMap(ctx, resourceMap, machineID, appState)
+	
+	// Ensure all pre-loaded children are added to the node map
+	for _, child := range childNode.Children {
+		addNodeToMap(child)
+		slog.Debug("Added pre-loaded child to nodeMap", 
+			"child_id", child.ID, 
+			"child_type", child.Type, 
+			"child_label", child.Label,
+			"clustermachine_id", clusterMachineID)
+	}
+	
+	slog.Debug("Pre-loaded ClusterMachine children", 
+		"clustermachine_id", clusterMachineID,
+		"machine_id", machineID,
+		"children_count", len(childNode.Children))
+	
 	return childNode
 }
 
@@ -559,8 +594,22 @@ func loadClusterMachineChildrenFromMap(ctx context.Context, resourceMap map[stri
 	children := make([]*TreeNode, 0)
 	
 	// Add Machine (back reference)
-	if machineNode := loadMachineNode(ctx, machineID, appState); machineNode != nil {
+	// Skip ClusterMachine child to prevent circular reference (Machine -> ClusterMachine -> Machine)
+	if machineNode := loadMachineNode(ctx, machineID, appState, true); machineNode != nil {
 		children = append(children, machineNode)
+	}
+	
+	// Add MachineStatus (same ID as Machine)
+	machineStatusNode := loadMachineStatusNode(ctx, machineID, appState)
+	if machineStatusNode != nil {
+		if showEmptyLabelNodes || machineStatusNode.Label != "" {
+			children = append(children, machineStatusNode)
+			slog.Debug("Added MachineStatus to ClusterMachine children", "machine_id", machineID, "label", machineStatusNode.Label)
+		} else {
+			slog.Debug("MachineStatus node has empty label, skipping", "machine_id", machineID)
+		}
+	} else {
+		slog.Debug("MachineStatus not found for ClusterMachine", "machine_id", machineID)
 	}
 	
 	// Add Cluster and MachineSet from labels
@@ -573,19 +622,46 @@ func loadClusterMachineChildrenFromMap(ctx context.Context, resourceMap map[stri
 		}
 	}
 	
-	// Add link nodes for ClusterMachine
-	clusterMachineLinks := createClusterMachineActionLinkNodes(machineID, appState)
-	for _, link := range clusterMachineLinks {
-		if link.Label != "" {
-			children = append(children, link)
-		}
-	}
-	
-	return filterEmptyLabelNodes(children)
+	filteredChildren := filterEmptyLabelNodes(children)
+	slog.Debug("loadClusterMachineChildrenFromMap", 
+		"machine_id", machineID,
+		"before_filter", len(children),
+		"after_filter", len(filteredChildren),
+		"machinestatus", machineStatusNode != nil)
+	return filteredChildren
 }
 
 // loadMachineNode loads a Machine node
-func loadMachineNode(ctx context.Context, machineID string, appState *AppState) *TreeNode {
+// skipClusterMachineChild: if true, prevents loading ClusterMachine as a child to avoid circular references
+func loadMachineNode(ctx context.Context, machineID string, appState *AppState, skipClusterMachineChild bool) *TreeNode {
+	// Check if Machine node already exists in the map (e.g., from Machines folder)
+	machineNodeID := fmt.Sprintf("%s-%s", string(omni.MachineType), machineID)
+	existingNode := getNodeByID(machineNodeID)
+	
+	if existingNode != nil {
+		// If we need to skip ClusterMachine child and the existing node has it, create a copy without it
+		if skipClusterMachineChild {
+			// Create a copy of the node without ClusterMachine children
+			machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
+			machine, err := debugStateGet(ctx, appState.stateClient, machineMD)
+			if err != nil {
+				return nil
+			}
+			machineResourceMap := resconverter.ToMap(machine)
+			enrichMachineResource(machineResourceMap, string(omni.MachineType), machineID, appState.stateClient, ctx, 0)
+			machineNode := createResourceNodeFromMap(machineResourceMap, machineID, string(omni.MachineType))
+			
+			// Load children but filter out ClusterMachine
+			loadMachineChildren(machineNode, appState, ctx, machineID, skipClusterMachineChild)
+			return machineNode
+		}
+		slog.Debug("Reusing existing Machine node from map", 
+			"machine_id", machineID,
+			"existing_children_count", len(existingNode.Children))
+		return existingNode
+	}
+	
+	// Machine node doesn't exist yet, create a new one
 	machineMD := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
 	machine, err := debugStateGet(ctx, appState.stateClient, machineMD)
 	if err != nil {
@@ -593,7 +669,11 @@ func loadMachineNode(ctx context.Context, machineID string, appState *AppState) 
 	}
 	machineResourceMap := resconverter.ToMap(machine)
 	enrichMachineResource(machineResourceMap, string(omni.MachineType), machineID, appState.stateClient, ctx, 0)
-	return createResourceNodeFromMap(machineResourceMap, machineID, string(omni.MachineType))
+	machineNode := createResourceNodeFromMap(machineResourceMap, machineID, string(omni.MachineType))
+	
+	// Load children (with or without ClusterMachine based on skipClusterMachineChild)
+	loadMachineChildren(machineNode, appState, ctx, machineID, skipClusterMachineChild)
+	return machineNode
 }
 
 // loadClusterNodeFromLabels loads a Cluster node from labels
@@ -651,26 +731,14 @@ func loadMachineStatusNode(ctx context.Context, machineID string, appState *AppS
 	return childNode
 }
 
-func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context, machineID string) {
+func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context, machineID string, skipClusterMachineChild bool) {
 	children := make([]*TreeNode, 0)
 	
-	// Load ClusterMachine (reverse lookup)
-	clusterMachineNode := loadClusterMachineForMachine(ctx, machineID, appState)
-	if clusterMachineNode != nil {
-		if showEmptyLabelNodes || clusterMachineNode.Label != "" {
-		children = append(children, clusterMachineNode)
-		} else {
-			slog.Warn("ClusterMachine node has empty label", "machine_id", machineID)
-		}
-	} else {
-		slog.Debug("No ClusterMachine found for machine", "machine_id", machineID)
-	}
-	
-	// Load MachineStatus
+	// Load MachineStatus first (same ID as Machine)
 	machineStatusNode := loadMachineStatusNode(ctx, machineID, appState)
 	if machineStatusNode != nil {
 		if showEmptyLabelNodes || machineStatusNode.Label != "" {
-		children = append(children, machineStatusNode)
+			children = append(children, machineStatusNode)
 		} else {
 			slog.Warn("MachineStatus node has empty label", "machine_id", machineID)
 		}
@@ -678,23 +746,50 @@ func loadMachineChildren(node *TreeNode, appState *AppState, ctx context.Context
 		slog.Debug("No MachineStatus found for machine", "machine_id", machineID)
 	}
 	
-	// Add link nodes: Labels, Extensions, Upgrade Status, Metrics, Config Diff
-	machineLinks := createMachineActionLinkNodes(machineID, appState)
-	for _, link := range machineLinks {
-		if showEmptyLabelNodes || link.Label != "" {
-			children = append(children, link)
+	// Load ClusterMachine last (reverse lookup - ClusterMachine ID = Machine ID, prefix label with "(ClusterMachine)", hidden if not found)
+	// Skip if skipClusterMachineChild is true to prevent circular references
+	var clusterMachineNode *TreeNode
+	if !skipClusterMachineChild {
+		clusterMachineNode = loadClusterMachineForMachine(ctx, machineID, appState)
+		if clusterMachineNode != nil {
+			if showEmptyLabelNodes || clusterMachineNode.Label != "" {
+				children = append(children, clusterMachineNode)
+			} else {
+				slog.Warn("ClusterMachine node has empty label", "machine_id", machineID)
+			}
+		} else {
+			slog.Debug("No ClusterMachine found for machine", "machine_id", machineID)
 		}
+	} else {
+		slog.Debug("Skipping ClusterMachine child to prevent circular reference", "machine_id", machineID)
 	}
 	
 	// Filter out any nodes with empty labels from the final children list
 	filteredChildren := filterEmptyLabelNodes(children)
 	node.Children = filteredChildren
+	
+	// Ensure all children are added to the node map
+	for _, child := range filteredChildren {
+		addNodeToMap(child)
+	}
+	
+	// Build list of child labels and types for logging
+	childList := make([]map[string]string, 0, len(filteredChildren))
+	for _, child := range filteredChildren {
+		childList = append(childList, map[string]string{
+			"label": child.Label,
+			"type":  child.Type,
+			"id":    child.ID,
+		})
+	}
+	
 	slog.Info("Loaded Machine children", 
 		"machine_id", machineID, 
 		"children_count", len(filteredChildren),
 		"before_filter", len(children),
 		"clustermachine", clusterMachineNode != nil,
-		"machinestatus", machineStatusNode != nil)
+		"machinestatus", machineStatusNode != nil,
+		"children", childList)
 }
 
 func loadKubernetesVersionChildren(node *TreeNode, appState *AppState, ctx context.Context, version string) {
@@ -713,6 +808,12 @@ func loadKubernetesVersionChildren(node *TreeNode, appState *AppState, ctx conte
 	// Filter out any nodes with empty labels
 	filteredChildren := filterEmptyLabelNodes(children)
 	node.Children = filteredChildren
+	
+	// Ensure all children are added to the node map
+	for _, child := range filteredChildren {
+		addNodeToMap(child)
+	}
+	
 	slog.Info("Loaded KubernetesVersion children", "version", version, "children_count", len(filteredChildren))
 }
 
@@ -753,157 +854,6 @@ func isResourceAlreadyChild(children []*TreeNode, resourceType, resourceID strin
 	return false
 }
 
-// addMachineIDLinks adds machine ID link nodes if not already present
-func addMachineIDLinks(node *TreeNode, appState *AppState, linkNodes []*TreeNode) []*TreeNode {
-	machineIDs := findMachineIDs(node.Resource)
-	for _, machineID := range machineIDs {
-		if !isResourceAlreadyChild(node.Children, string(omni.MachineType), machineID) {
-			linkNode := createLinkNode("link-machine", fmt.Sprintf("Machine ID: %s", machineID), machineID, func() {
-				loadMachineByID(machineID, appState)
-			})
-			linkNodes = append(linkNodes, linkNode)
-		}
-	}
-	return linkNodes
-}
-
-// addKubernetesVersionLinks adds Kubernetes version link nodes if not already present
-func addKubernetesVersionLinks(node *TreeNode, appState *AppState, linkNodes []*TreeNode) []*TreeNode {
-	k8sVersions := findKubernetesVersions(node.Resource)
-	for _, version := range k8sVersions {
-		if !isResourceAlreadyChild(node.Children, string(omni.KubernetesVersionType), version) {
-			linkNode := createLinkNode("link-kubernetes-version", fmt.Sprintf("Kubernetes Version: %s", version), version, func() {
-				loadResourcesByK8sVersion(version, appState)
-			})
-			linkNodes = append(linkNodes, linkNode)
-		}
-	}
-	return linkNodes
-}
-
-// addMachineSetLinks adds machine set link nodes if not already present
-func addMachineSetLinks(node *TreeNode, appState *AppState, linkNodes []*TreeNode) []*TreeNode {
-	machineSetIDs := findMachineSetIDs(node.Resource)
-	for _, machineSetID := range machineSetIDs {
-		if !isResourceAlreadyChild(node.Children, string(omni.MachineSetType), machineSetID) {
-			linkNode := createLinkNode("link-machine-set", fmt.Sprintf("Machine Set: %s", machineSetID), machineSetID, func() {
-				loadMachinesByMachineSet(machineSetID, appState)
-			})
-			linkNodes = append(linkNodes, linkNode)
-		}
-	}
-	return linkNodes
-}
-
-// addResourceActionLinks adds resource-specific action link nodes based on resource type
-func addResourceActionLinks(resourceID, resourceType string, appState *AppState, linkNodes []*TreeNode) []*TreeNode {
-	switch resourceType {
-	case string(omni.ClusterType):
-		return append(linkNodes, createActionLinkNodes(resourceID, appState)...)
-	case string(omni.MachineType):
-		return append(linkNodes, createMachineActionLinkNodes(resourceID, appState)...)
-	case string(omni.MachineSetType):
-		return append(linkNodes, createMachineSetActionLinkNodes(resourceID, appState)...)
-	case string(omni.ClusterMachineType):
-		return append(linkNodes, createClusterMachineActionLinkNodes(resourceID, appState)...)
-	default:
-		return linkNodes
-	}
-}
-
-// addLinkNodes adds link nodes as children to a resource node
-func addLinkNodes(node *TreeNode, appState *AppState, ctx context.Context) {
-	if node.Resource == nil {
-		return
-	}
-	
-	linkNodes := make([]*TreeNode, 0)
-	
-	// Add machine_id links
-	linkNodes = addMachineIDLinks(node, appState, linkNodes)
-	
-	// Add kubernetes_version links
-	linkNodes = addKubernetesVersionLinks(node, appState, linkNodes)
-	
-	// Add machine_set links
-	linkNodes = addMachineSetLinks(node, appState, linkNodes)
-	
-	// Add resource action links based on resource type
-	resourceID, resourceType := extractResourceInfoFromMap(node.Resource)
-	linkNodes = addResourceActionLinks(resourceID, resourceType, appState, linkNodes)
-	
-	// Append link nodes to existing children
-	node.Children = append(node.Children, linkNodes...)
-	
-	// Add link nodes to the map
-	for _, linkNode := range linkNodes {
-		addNodeToMap(linkNode)
-	}
-}
-
-// createLinkNode creates a link node that can be clicked to load a resource
-func createLinkNode(linkType, label, targetID string, action func()) *TreeNode {
-	linkID := fmt.Sprintf("%s-%s", linkType, targetID)
-	
-	// Store the action in a map so we can execute it when the link is clicked
-	if action != nil {
-		linkActionMap[linkID] = action
-	}
-	
-	return &TreeNode{
-		ID:    linkID,
-		Type:  linkType,
-		Label: label,
-		Resource: map[string]interface{}{
-			"type":      linkType,
-			"id":        targetID,
-			"link_type": linkType,
-		},
-		Children: []*TreeNode{},
-	}
-}
-
-func loadMachineByID(machineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineType, machineID, resource.VersionUndefined)
-
-	machine, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		// Format directives are in translation file: "machine.error.extensions" = "Error loading extensions for machine %s: %v"
-		appState.statusLabel.SetText(i18n.T("machine.error.extensions", machineID, err)) //nolint
-		return
-	}
-
-	machineMap := resconverter.ToMap(machine)
-	updateDetailPane(machineMap, appState)
-	// Format directive is in translation file: "machine.loaded" = "Loaded machine: %s"
-	appState.statusLabel.SetText(i18n.T("machine.loaded", machineID)) //nolint
-}
-
-func loadMachinesByMachineSet(machineSetID string, appState *AppState) {
-	ctx := context.Background()
-	resources := findClusterMachinesByMachineSet(ctx, machineSetID, appState)
-
-	if len(resources) == 0 {
-		// Format directive is in translation file: "machineset.not_found" = "No machines found in machine set %s"
-		appState.statusLabel.SetText(i18n.T("machineset.not_found", machineSetID)) //nolint
-		return
-	}
-
-	root := &TreeNode{
-		ID:       "",
-		Type:     "root",
-		Label:    "",
-		Resource: nil,
-		Children: buildResourceNodes(resources, appState.stateClient, ctx),
-	}
-	appState.treeRoot = root
-	setRootNode(root)
-	addNodeToMap(root)
-	appState.resourceTree.Refresh()
-	// Format directives are in translation file: "machineset.found" = "Found %d machines in machine set %s"
-	appState.statusLabel.SetText(i18n.T("machineset.found", len(resources), machineSetID)) //nolint
-}
 
 func findClusterMachinesByMachineSet(ctx context.Context, machineSetID string, appState *AppState) []map[string]interface{} {
 	resources := make([]map[string]interface{}, 0)
@@ -932,30 +882,6 @@ func findClusterMachinesByMachineSet(ctx context.Context, machineSetID string, a
 	return resources
 }
 
-func loadResourcesByK8sVersion(version string, appState *AppState) {
-	ctx := context.Background()
-	resources := findResourcesByK8sVersion(ctx, version, appState)
-
-	if len(resources) == 0 {
-		// Format directive is in translation file: "k8s.version.not_found" = "No resources found with Kubernetes version %s"
-		appState.statusLabel.SetText(i18n.T("k8s.version.not_found", version)) //nolint
-		return
-	}
-
-	root := &TreeNode{
-		ID:       "",
-		Type:     "root",
-		Label:    "",
-		Resource: nil,
-		Children: buildResourceNodes(resources, appState.stateClient, ctx),
-	}
-	appState.treeRoot = root
-	setRootNode(root)
-	addNodeToMap(root)
-	appState.resourceTree.Refresh()
-	// Format directives are in translation file: "k8s.version.found" = "Found %d resources with Kubernetes version %s"
-	appState.statusLabel.SetText(i18n.T("k8s.version.found", len(resources), version)) //nolint
-}
 
 func findResourcesByK8sVersion(ctx context.Context, version string, appState *AppState) []map[string]interface{} {
 	resources := make([]map[string]interface{}, 0)
@@ -1006,308 +932,6 @@ func findClusterMachinesByK8sVersion(ctx context.Context, version string, appSta
 	return resources
 }
 
-// Cluster action loaders
-func loadClusterStatus(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster status: %s", clusterID))
-}
-
-func loadClusterMetrics(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMetricsType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster metrics: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster metrics: %s", clusterID))
-}
-
-func loadClusterBootstrap(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterBootstrapStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster bootstrap: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster bootstrap: %s", clusterID))
-}
-
-func loadClusterKubeconfig(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubeconfigType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading kubeconfig: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded kubeconfig: %s", clusterID))
-}
-
-func loadClusterKubernetesUpgrade(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubernetesUpgradeStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading Kubernetes upgrade: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded Kubernetes upgrade: %s", clusterID))
-}
-
-func loadClusterTalosUpgrade(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.TalosUpgradeStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading Talos upgrade: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded Talos upgrade: %s", clusterID))
-}
-
-func loadClusterEndpoints(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterEndpointType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster endpoints: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster endpoints: %s", clusterID))
-}
-
-func loadClusterKubernetesStatus(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.KubernetesStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading Kubernetes status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded Kubernetes status: %s", clusterID))
-}
-
-func loadClusterControlPlaneStatus(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ControlPlaneStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading control plane status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded control plane status: %s", clusterID))
-}
-
-func loadClusterDiagnostics(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterDiagnosticsType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster diagnostics: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster diagnostics: %s", clusterID))
-}
-
-func loadClusterDestroyStatus(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterDestroyStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster destroy status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster destroy status: %s", clusterID))
-}
-
-func loadClusterWorkloadProxyStatus(clusterID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterWorkloadProxyStatusType, clusterID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading workload proxy status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded workload proxy status: %s", clusterID))
-}
-
-// Machine action loaders
-func loadMachineLabels(machineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineLabelsType, machineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine labels: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded machine labels: %s", machineID))
-}
-
-func loadMachineExtensions(machineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineExtensionsType, machineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine extensions: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded machine extensions: %s", machineID))
-}
-
-func loadMachineUpgradeStatus(machineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineUpgradeStatusType, machineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine upgrade status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded machine upgrade status: %s", machineID))
-}
-
-func loadMachineMetrics(machineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineStatusMetricsType, machineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine metrics: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded machine metrics: %s", machineID))
-}
-
-func loadMachineConfigDiff(machineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineConfigDiffType, machineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine config diff: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded machine config diff: %s", machineID))
-}
-
-// MachineSet action loaders
-func loadMachineSetStatus(machineSetID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetStatusType, machineSetID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine set status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded machine set status: %s", machineSetID))
-}
-
-func loadMachineSetDestroyStatus(machineSetID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.MachineSetDestroyStatusType, machineSetID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading machine set destroy status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded machine set destroy status: %s", machineSetID))
-}
-
-// ClusterMachine action loaders
-func loadClusterMachineStatus(clusterMachineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineStatusType, clusterMachineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster machine status: %s", clusterMachineID))
-}
-
-func loadClusterMachineConfigStatus(clusterMachineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineConfigStatusType, clusterMachineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine config status: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster machine config status: %s", clusterMachineID))
-}
-
-func loadClusterMachineTalosVersion(clusterMachineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineTalosVersionType, clusterMachineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine Talos version: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster machine Talos version: %s", clusterMachineID))
-}
-
-func loadClusterMachineConfig(clusterMachineID string, appState *AppState) {
-	ctx := context.Background()
-	md := resource.NewMetadata(omniresources.DefaultNamespace, omni.ClusterMachineConfigType, clusterMachineID, resource.VersionUndefined)
-	res, err := debugStateGet(ctx, appState.stateClient, md)
-	if err != nil {
-		appState.statusLabel.SetText(fmt.Sprintf("Error loading cluster machine config: %v", err))
-		return
-	}
-	resourceMap := resconverter.ToMap(res)
-	updateDetailPane(resourceMap, appState)
-	appState.statusLabel.SetText(fmt.Sprintf("Loaded cluster machine config: %s", clusterMachineID))
-}
 
 // showEmptyLabelNodes controls whether nodes with empty labels are filtered out
 var showEmptyLabelNodes = false
@@ -1320,7 +944,7 @@ func logStartupBanner(version string, ignoreEnv bool, showEmptyLabels bool, grpc
 	// Log banner as structured JSON for programmatic access and consistency
 	slog.Info("Application Startup Banner",
 		"separator", "==================================================================================",
-		"application", "Omni API GUI Application",
+		"application", "Omni GUI Application",
 		"version", version,
 		"started_at", startTime,
 		"ignore_env", ignoreEnv,
@@ -1337,10 +961,10 @@ func setupLogging() (*os.File, error) {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 	
-	logPath := filepath.Join(execDir, "omni-api.log")
+	logPath := filepath.Join(execDir, "omni-gui.json")
 	
-	// Open log file in append mode (create if it doesn't exist)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// Open log file in truncate mode (replace on startup, create if it doesn't exist)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}

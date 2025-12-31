@@ -50,13 +50,13 @@ Clusters (resource-type-folder)
 ```
 Machines (resource-type-folder) [when expanded, loads list of machines directly]
 └── Machine 1 [when expanded, loads the machine details]
-    ├── (ClusterMachine) ClusterMachine (reverse lookup - ClusterMachine ID = Machine ID, prefix label with "(ClusterMachine)", hidden if not found)
-    │   ├── Machine (back reference)
-    │   ├── Cluster (from labels)
-    │   ├── MachineSet (from labels, if applicable)
-    │   └── [Link nodes: Status, Config Status, Talos Version, Config]
     ├── MachineStatus (same ID as Machine)
-    └── [Link nodes: Labels, Extensions, Upgrade Status, Metrics, Config Diff]
+    ├── [Link nodes: Labels, Extensions, Upgrade Status, Metrics, Config Diff]
+    └── (ClusterMachine) ClusterMachine (reverse lookup - ClusterMachine ID = Machine ID, prefix label with "(ClusterMachine)", hidden if not found)
+        ├── Machine (back reference)
+        ├── Cluster (from labels)
+        ├── MachineSet (from labels, if applicable)
+        └── [Link nodes: Status, Config Status, Talos Version, Config]
 ```
 
 ### Machine Children Details

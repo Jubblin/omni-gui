@@ -31,22 +31,13 @@ func debugQuery(operation string, md resource.Metadata) {
 		return
 	}
 
-	queryInfo := map[string]interface{}{
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-		"operation":  operation,
-		"namespace":  md.Namespace(),
-		"type":       string(md.Type()),
-		"id":         md.ID(),
-		"version":    md.Version().String(),
-	}
-
-	jsonData, err := json.MarshalIndent(queryInfo, "", "  ")
-	if err != nil {
-		slog.Error("Failed to marshal query debug info", "error", err)
-		return
-	}
-
-	slog.Info("gRPC Query", "query", string(jsonData))
+	slog.Info("gRPC Query",
+		"timestamp", time.Now().UTC().Format(time.RFC3339),
+		"operation", operation,
+		"namespace", md.Namespace(),
+		"type", string(md.Type()),
+		"id", md.ID(),
+		"version", md.Version().String())
 }
 
 // debugResponse dumps response data as JSON when debug level >= 2
@@ -55,32 +46,26 @@ func debugResponse(operation string, md resource.Metadata, res resource.Resource
 		return
 	}
 
-	responseInfo := map[string]interface{}{
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"operation": operation,
-		"namespace": md.Namespace(),
-		"type":      string(md.Type()),
-		"id":        md.ID(),
-		"error":     nil,
+	args := []interface{}{
+		"timestamp", time.Now().UTC().Format(time.RFC3339),
+		"operation", operation,
+		"namespace", md.Namespace(),
+		"type", string(md.Type()),
+		"id", md.ID(),
 	}
 
 	if err != nil {
-		responseInfo["error"] = err.Error()
+		args = append(args, "error", err.Error())
 	} else if res != nil {
-		responseInfo["found"] = true
-		responseInfo["resource_id"] = res.Metadata().ID()
-		responseInfo["resource_version"] = res.Metadata().Version().String()
+		args = append(args,
+			"found", true,
+			"resource_id", res.Metadata().ID(),
+			"resource_version", res.Metadata().Version().String())
 	} else {
-		responseInfo["found"] = false
+		args = append(args, "found", false)
 	}
 
-	jsonData, err := json.MarshalIndent(responseInfo, "", "  ")
-	if err != nil {
-		slog.Error("Failed to marshal response debug info", "error", err)
-		return
-	}
-
-	slog.Info("gRPC Response", "response", string(jsonData))
+	slog.Info("gRPC Response", args...)
 }
 
 // debugListResponse dumps list response data as JSON when debug level >= 2
@@ -89,32 +74,25 @@ func debugListResponse(operation string, md resource.Metadata, items []resource.
 		return
 	}
 
-	responseInfo := map[string]interface{}{
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"operation": operation,
-		"namespace": md.Namespace(),
-		"type":      string(md.Type()),
-		"error":     nil,
-		"count":     len(items),
+	args := []interface{}{
+		"timestamp", time.Now().UTC().Format(time.RFC3339),
+		"operation", operation,
+		"namespace", md.Namespace(),
+		"type", string(md.Type()),
+		"count", len(items),
 	}
 
 	if err != nil {
-		responseInfo["error"] = err.Error()
+		args = append(args, "error", err.Error())
 	} else {
 		ids := make([]string, 0, len(items))
 		for _, item := range items {
 			ids = append(ids, item.Metadata().ID())
 		}
-		responseInfo["resource_ids"] = ids
+		args = append(args, "resource_ids", ids)
 	}
 
-	jsonData, err := json.MarshalIndent(responseInfo, "", "  ")
-	if err != nil {
-		slog.Error("Failed to marshal list response debug info", "error", err)
-		return
-	}
-
-	slog.Info("gRPC List Response", "response", string(jsonData))
+	slog.Info("gRPC List Response", args...)
 }
 
 // debugUIDisplay dumps resource data when displayed in UI (debug level >= 3)
@@ -131,23 +109,25 @@ func debugUIDisplay(resourceData map[string]interface{}, resourceID, resourceTyp
 		"resource_data": resourceData,
 	}
 
-	jsonData, err := json.MarshalIndent(displayInfo, "", "  ")
-	if err != nil {
-		slog.Error("Failed to marshal UI display debug info", "error", err)
-		return
-	}
-
 	// Write to a debug dump file
 	debugDir := filepath.Join(os.TempDir(), "omni-api-debug")
 	if err := os.MkdirAll(debugDir, 0755); err == nil {
-		filename := fmt.Sprintf("ui-display-%s-%s-%d.json", resourceType, resourceID, time.Now().Unix())
-		filepath := filepath.Join(debugDir, filename)
-		if err := os.WriteFile(filepath, jsonData, 0644); err == nil {
-			slog.Info("gRPC UI Display Dump", "file", filepath, "resource_id", resourceID, "resource_type", resourceType)
+		jsonData, err := json.MarshalIndent(displayInfo, "", "  ")
+		if err == nil {
+			filename := fmt.Sprintf("ui-display-%s-%s-%d.json", resourceType, resourceID, time.Now().Unix())
+			filepath := filepath.Join(debugDir, filename)
+			if err := os.WriteFile(filepath, jsonData, 0644); err == nil {
+				slog.Info("gRPC UI Display Dump", "file", filepath, "resource_id", resourceID, "resource_type", resourceType)
+			}
 		}
 	}
 
-	slog.Info("gRPC UI Display", "display", string(jsonData))
+	slog.Info("gRPC UI Display",
+		"timestamp", displayInfo["timestamp"],
+		"context", displayInfo["context"],
+		"resource_id", displayInfo["resource_id"],
+		"resource_type", displayInfo["resource_type"],
+		"resource_data", displayInfo["resource_data"])
 }
 
 // debugStateGet wraps state.Get with debugging
