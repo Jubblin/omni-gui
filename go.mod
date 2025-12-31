@@ -9,7 +9,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/siderolabs/omni/client v1.4.0-beta.1.0.20251218113632-d5f6ebf33a5d
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.33.0
+	golang.org/x/oauth2 v0.34.0
 	google.golang.org/protobuf v1.36.10
 )
 
