@@ -1,4 +1,4 @@
-name: Auto-increment Version on PR
+name: Auto-increment Version Label on PR
 
 on:
   pull_request:
@@ -14,131 +14,90 @@ on:
         default: "main"
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 jobs:
-  bump-version:
-    name: Bump Patch Version
+  bump-version-label:
+    name: Update Version Label
     runs-on: ubuntu-latest
     if: github.event.pull_request.base.ref == 'main'
 
     steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v6
+      - name: Checkout base branch
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 0
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Fetch base branch
-        run: |
-          git fetch origin ${{ github.event.pull_request.base.ref }}:base-branch
 
       - name: Get base version from main branch
         id: base-version
         run: |
-          BASE_VERSION=$(git show base-branch:VERSION 2>/dev/null || echo "0.0.1")
+          BASE_VERSION=$(cat VERSION 2>/dev/null || echo "0.0.1")
           echo "base-version=$BASE_VERSION" >> $GITHUB_OUTPUT
           echo "Base version from main: $BASE_VERSION"
 
-      - name: Get current PR version
-        id: pr-version
-        run: |
-          if [ -f VERSION ]; then
-            PR_VERSION=$(cat VERSION)
-          else
-            PR_VERSION=""
-          fi
-          echo "pr-version=$PR_VERSION" >> $GITHUB_OUTPUT
-          echo "Current PR version: $PR_VERSION"
+      - name: Get existing version label from PR
+        id: existing-label
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
 
-      - name: Check if version needs incrementing
+            const versionLabelPattern = /^v\d+\.\d+\.\d+$/;
+            const versionLabel = issue.labels.find(label => versionLabelPattern.test(label.name));
+
+            if (versionLabel) {
+              core.setOutput('label', versionLabel.name);
+              core.setOutput('version', versionLabel.name.replace(/^v/, ''));
+            } else {
+              core.setOutput('label', '');
+              core.setOutput('version', '');
+            }
+
+      - name: Calculate version for label
         id: version-check
         run: |
           BASE_VERSION="${{ steps.base-version.outputs.base-version }}"
-          PR_VERSION="${{ steps.pr-version.outputs.pr-version }}"
+          EXISTING_VERSION="${{ steps.existing-label.outputs.version }}"
 
-          # Parse version components
+          # Parse base version components
           IFS='.' read -r BASE_MAJOR BASE_MINOR BASE_PATCH <<< "$BASE_VERSION"
 
-          # Check if PR version exists and is valid
-          if [ -n "$PR_VERSION" ] && [[ "$PR_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            IFS='.' read -r PR_MAJOR PR_MINOR PR_PATCH <<< "$PR_VERSION"
+          # Check if PR already has a version label
+          if [ -n "$EXISTING_VERSION" ] && [[ "$EXISTING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            IFS='.' read -r EXISTING_MAJOR EXISTING_MINOR EXISTING_PATCH <<< "$EXISTING_VERSION"
             
-            # If PR version is already higher than base, no need to increment
-            if [ "$PR_MAJOR" -gt "$BASE_MAJOR" ] || \
-               ([ "$PR_MAJOR" -eq "$BASE_MAJOR" ] && [ "$PR_MINOR" -gt "$BASE_MINOR" ]) || \
-               ([ "$PR_MAJOR" -eq "$BASE_MAJOR" ] && [ "$PR_MINOR" -eq "$BASE_MINOR" ] && [ "$PR_PATCH" -gt "$BASE_PATCH" ]); then
-              echo "Version already incremented: $PR_VERSION"
-              echo "needs-increment=false" >> $GITHUB_OUTPUT
-              echo "new-version=$PR_VERSION" >> $GITHUB_OUTPUT
+            # If existing version is already higher than base, use it
+            if [ "$EXISTING_MAJOR" -gt "$BASE_MAJOR" ] || \
+               ([ "$EXISTING_MAJOR" -eq "$BASE_MAJOR" ] && [ "$EXISTING_MINOR" -gt "$BASE_MINOR" ]) || \
+               ([ "$EXISTING_MAJOR" -eq "$BASE_MAJOR" ] && [ "$EXISTING_MINOR" -eq "$BASE_MINOR" ] && [ "$EXISTING_PATCH" -gt "$BASE_PATCH" ]); then
+              echo "Using existing version label: $EXISTING_VERSION"
+              echo "needs-update=false" >> $GITHUB_OUTPUT
+              echo "new-version=$EXISTING_VERSION" >> $GITHUB_OUTPUT
               exit 0
             fi
             
-            # If PR version equals base version, we need to increment (e.g., after a rebase)
-            if [ "$PR_MAJOR" -eq "$BASE_MAJOR" ] && [ "$PR_MINOR" -eq "$BASE_MINOR" ] && [ "$PR_PATCH" -eq "$BASE_PATCH" ]; then
-              echo "PR version equals base version (likely after rebase), incrementing..."
+            # If existing version equals base version, increment it
+            if [ "$EXISTING_MAJOR" -eq "$BASE_MAJOR" ] && [ "$EXISTING_MINOR" -eq "$BASE_MINOR" ] && [ "$EXISTING_PATCH" -eq "$BASE_PATCH" ]; then
+              echo "Existing version equals base version, incrementing..."
             fi
           fi
 
-          # Increment patch version
+          # Increment patch version from base
           NEW_PATCH=$((BASE_PATCH + 1))
           NEW_VERSION="${BASE_MAJOR}.${BASE_MINOR}.${NEW_PATCH}"
-          echo "needs-increment=true" >> $GITHUB_OUTPUT
+          echo "needs-update=true" >> $GITHUB_OUTPUT
           echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "New version: $NEW_VERSION"
+          echo "Calculated new version: $NEW_VERSION"
 
-      - name: Update version files
-        if: steps.version-check.outputs.needs-increment == 'true'
-        run: |
-          NEW_VERSION="${{ steps.version-check.outputs.new-version }}"
-
-          # Update VERSION file
-          echo "$NEW_VERSION" > VERSION
-
-          # Update main.go Swagger annotation - handle both spaces and tabs
-          # Note: The actual version in code uses a variable set via ldflags at build time
-          sed -i.bak "s/@version[[:space:]]*[0-9]\+\.[0-9]\+\.[0-9]\+/@version         $NEW_VERSION/" main.go
-          rm -f main.go.bak
-
-          echo "Updated version to $NEW_VERSION in:"
-          echo "  - VERSION"
-          echo "  - main.go (Swagger annotation)"
-          echo "Note: Version in health.go is set via ldflags at build time"
-
-      - name: Check for changes
-        if: steps.version-check.outputs.needs-increment == 'true'
-        id: changes
-        run: |
-          # Check if there are any changes (including docs/)
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "has-changes=false" >> $GITHUB_OUTPUT
-          else
-            echo "has-changes=true" >> $GITHUB_OUTPUT
-            echo "Changes detected:"
-            git diff --name-status
-            git diff
-          fi
-
-      - name: Commit and push version update
-        env:
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        if: steps.version-check.outputs.needs-increment == 'true' && steps.changes.outputs.has-changes == 'true'
-        run: |
-          git add VERSION main.go docs/
-          git commit -m "chore: auto-increment version to ${{ steps.version-check.outputs.new-version }} [skip ci]"
-          # Use force push with lease to avoid conflicts, but only if needed
-          git push origin ${{ env.PR_HEAD_REF }} || \
-            (git pull --rebase origin ${{ env.PR_HEAD_REF }} && \
-             git push origin ${{ env.PR_HEAD_REF }})
-
-      - name: Add version label to PR
+      - name: Update version label on PR
+        if: steps.version-check.outputs.needs-update == 'true'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -187,8 +146,8 @@ jobs:
               console.log(`Could not add label ${versionLabel}:`, error.message);
             }
 
-      - name: Comment on PR (version incremented)
-        if: steps.version-check.outputs.needs-increment == 'true' && steps.changes.outputs.has-changes == 'true'
+      - name: Comment on PR (version label updated)
+        if: steps.version-check.outputs.needs-update == 'true'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -202,7 +161,7 @@ jobs:
 
             const botComment = comments.data.find(comment => 
               comment.user.type === 'Bot' && 
-              comment.body.includes('Version Auto-incremented')
+              comment.body.includes('Version Label Updated')
             );
 
             if (!botComment) {
@@ -210,22 +169,18 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `✅ **Version Auto-incremented**
+                body: `✅ **Version Label Updated**
 
-            Version has been automatically incremented from \`${{ steps.base-version.outputs.base-version }}\` to \`${{ steps.version-check.outputs.new-version }}\`.
+            Version label has been automatically updated from \`${{ steps.base-version.outputs.base-version }}\` to \`${{ steps.version-check.outputs.new-version }}\`.
 
-            Updated files:
-            - \`VERSION\`
-            - \`main.go\` (Swagger annotation)
+            The version label \`v${{ steps.version-check.outputs.new-version }}\` has been added to this PR.
 
-            Note: Version in \`health.go\` is set via ldflags at build time from the \`VERSION\` file.
-
-            This commit will be automatically included in your PR.`
+            Note: Version is set via ldflags at build time from the PR label.`
               });
             }
 
-      - name: Comment on PR (no increment needed)
-        if: steps.version-check.outputs.needs-increment == 'false'
+      - name: Comment on PR (no update needed)
+        if: steps.version-check.outputs.needs-update == 'false'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -239,7 +194,7 @@ jobs:
 
             const botComment = comments.data.find(comment => 
               comment.user.type === 'Bot' && 
-              comment.body.includes('Version Check')
+              comment.body.includes('Version Label Check')
             );
 
             if (!botComment) {
@@ -247,10 +202,10 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `ℹ️ **Version Check**
+                body: `ℹ️ **Version Label Check**
 
-            Version is already incremented: \`${{ steps.version-check.outputs.new-version }}\`
+            Version label is already set: \`v${{ steps.version-check.outputs.new-version }}\`
 
-            No version update needed.`
+            No label update needed.`
               });
             }

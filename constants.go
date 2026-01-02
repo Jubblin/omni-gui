@@ -10,5 +10,6 @@ const (
 	clusterMachineLabelPrefix = "(ClusterMachine) %s"
 )
 
-// Version is set at build time via ldflags
+// Version is the application version, set at build time
+// This should be set via ldflags when building
 var Version = "dev"
