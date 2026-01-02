@@ -1,0 +1,272 @@
+name: Build and Release
+
+on:
+  pull_request:
+    types: [closed, labeled]
+    branches:
+      - main
+      - dev
+
+jobs:
+  check-pr:
+    name: Check PR and Extract Version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    if: |
+      (github.event.action == 'closed' && github.event.pull_request.merged == true) ||
+      (github.event.action == 'labeled')
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should-release: ${{ steps.check.outputs.should-release }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate GitHub CLI
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Get PR labels
+        id: labels
+        run: |
+          if [ "${{ github.event.action }}" == "labeled" ]; then
+            LABEL="${{ github.event.label.name }}"
+          else
+            # Get all labels and find one matching version pattern
+            LABEL=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -E '^(release:|v?)[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
+          fi
+          echo "label=$LABEL" >> $GITHUB_OUTPUT
+          echo "Found label: $LABEL"
+
+      - name: Extract version from label
+        id: version
+        run: |
+          LABEL="${{ steps.labels.outputs.label }}"
+          if [ -z "$LABEL" ]; then
+            echo "No release label found"
+            exit 1
+          fi
+          # Extract version from label (handles formats like "release:0.0.11", "v0.0.11", "0.0.11")
+          VERSION=$(echo "$LABEL" | sed -E 's/^(release:|v?)//' | sed -E 's/^v//')
+          if [ -z "$VERSION" ]; then
+            echo "Could not extract version from label: $LABEL"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Check if should release
+        id: check
+        run: |
+          # Ensure PR is targeting main branch
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          if [ "$BASE_REF" != "main" ]; then
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "PR is not targeting main branch (targeting: $BASE_REF)"
+            exit 0
+          fi
+
+          if [ "${{ github.event.action }}" == "closed" ] && [ "${{ github.event.pull_request.merged }}" == "true" ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.action }}" == "labeled" ]; then
+            # Only release if PR is merged
+            MERGED=$(gh pr view ${{ github.event.pull_request.number }} --json merged --jq '.merged')
+            if [ "$MERGED" == "true" ]; then
+              echo "should-release=true" >> $GITHUB_OUTPUT
+            else
+              echo "should-release=false" >> $GITHUB_OUTPUT
+              echo "PR is not merged yet"
+            fi
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+          fi
+
+  test:
+    name: Run Tests
+    needs: check-pr
+    if: needs.check-pr.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || 'main' }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./...
+
+  build:
+    name: Build Binaries
+    needs: [check-pr, test]
+    if: needs.check-pr.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            goos: linux
+            goarch: amd64
+          # - os: linux
+          #   arch: arm64
+          #   goos: linux
+          #   goarch: arm64
+          # - os: darwin
+          #   arch: amd64
+          #   goos: darwin
+          #   goarch: amd64
+          - os: darwin
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+          # - os: windows
+          #   arch: amd64
+          #   goos: windows
+          #   goarch: amd64
+          # - os: windows
+          #   arch: arm64
+          #   goos: windows
+          #   goarch: arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || 'main' }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ needs.check-pr.outputs.version }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OS="${{ matrix.os }}"
+          ARCH="${{ matrix.arch }}"
+
+          if [ "${{ matrix.goos }}" == "windows" ]; then
+            OUTPUT_NAME="omni-gui-${VERSION}-${OS}-${ARCH}.exe"
+          else
+            OUTPUT_NAME="omni-gui-${VERSION}-${OS}-${ARCH}"
+          fi
+
+          mkdir -p dist
+          go build -ldflags "-X github.com/jubblin/omni-api/main.Version=${VERSION}" -o "dist/${OUTPUT_NAME}" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-gui-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [check-pr, build]
+    if: needs.check-pr.outputs.should-release == 'true' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || 'main' }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ needs.check-pr.outputs.version }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Create and push tag
+        run: |
+          TAG="v${{ needs.check-pr.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Created and pushed tag: $TAG"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create checksums
+        run: |
+          cd dist
+          find . -type f -name "omni-gui-*" -exec sha256sum {} \; > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body: |
+            ## Release ${{ steps.version.outputs.tag }}
+
+            ### Binaries
+
+            This release includes pre-built binaries for the following platforms:
+
+            - **Linux**: amd64, arm64
+            - **macOS**: amd64, arm64
+            - **Windows**: amd64, arm64
+
+            ### Checksums
+
+            See `checksums.txt` for SHA256 checksums of all binaries.
+
+            ### Installation
+
+            1. Download the appropriate binary for your platform
+            2. Make it executable (Linux/macOS): `chmod +x omni-gui-*`
+            3. Run: `./omni-gui-*` (or `omni-gui-*.exe` on Windows)
+          files: |
+            dist/**/*
+          draft: false
+          prerelease: false
