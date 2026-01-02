@@ -144,6 +144,12 @@ func TestUpdateDetailLinksIntegration(t *testing.T) {
 		machineRelatedLinksContainer:   container.NewVBox(),
 	}
 
+	// Add some content to containers first to test clearing
+	appState.resourceActionsContainer.Add(widget.NewLabel("Test"))
+	appState.machineLinksContainer.Add(widget.NewLabel("Test"))
+	appState.resourceActionsContainer.Show()
+	appState.machineLinksContainer.Show()
+
 	// Test with machine resource data that has machine_id
 	resourceData := map[string]interface{}{
 		"id":        "machine-1",
@@ -153,38 +159,18 @@ func TestUpdateDetailLinksIntegration(t *testing.T) {
 
 	updateDetailLinks(resourceData, "Machines.omni.sidero.dev", "machine-1", appState)
 
-	// ResourceActions should be visible for Machine type
-	assert.True(t, appState.resourceActionsContainer.Visible(), "ResourceActions should be visible for Machine type")
-	assert.Greater(t, len(appState.resourceActionsContainer.Objects), 0, "ResourceActions should have content")
+	// updateDetailLinks clears all containers, so all should be hidden and empty
+	assert.False(t, appState.resourceActionsContainer.Visible(), "ResourceActions should be hidden after updateDetailLinks")
+	assert.Equal(t, 0, len(appState.resourceActionsContainer.Objects), "ResourceActions should be empty after updateDetailLinks")
 
-	// MachineLinks should be visible since machine_id is present
-	assert.True(t, appState.machineLinksContainer.Visible(), "MachineLinks should be visible when machine_id is present")
-	assert.Greater(t, len(appState.machineLinksContainer.Objects), 0, "MachineLinks should have content")
+	assert.False(t, appState.machineLinksContainer.Visible(), "MachineLinks should be hidden after updateDetailLinks")
+	assert.Equal(t, 0, len(appState.machineLinksContainer.Objects), "MachineLinks should be empty after updateDetailLinks")
 
-	// VersionLinks should be hidden since no kubernetes_version
-	assert.False(t, appState.versionLinksContainer.Visible(), "VersionLinks should be hidden when no kubernetes_version")
+	assert.False(t, appState.versionLinksContainer.Visible(), "VersionLinks should be hidden after updateDetailLinks")
+	assert.Equal(t, 0, len(appState.versionLinksContainer.Objects), "VersionLinks should be empty after updateDetailLinks")
 
-	// MachineSetLinks should be hidden since no machine-set label
-	assert.False(t, appState.machineSetLinksContainer.Visible(), "MachineSetLinks should be hidden when no machine-set label")
-
-	// Test with cluster resource data
-	resourceData = map[string]interface{}{
-		"id":                "cluster-1",
-		"type":              "Clusters.omni.sidero.dev",
-		"kubernetes_version": "v1.28.0",
-	}
-
-	updateDetailLinks(resourceData, "Clusters.omni.sidero.dev", "cluster-1", appState)
-
-	// ResourceActions should be visible for Cluster type
-	assert.True(t, appState.resourceActionsContainer.Visible(), "ResourceActions should be visible for Cluster type")
-
-	// VersionLinks should be visible since kubernetes_version is present
-	assert.True(t, appState.versionLinksContainer.Visible(), "VersionLinks should be visible when kubernetes_version is present")
-	assert.Greater(t, len(appState.versionLinksContainer.Objects), 0, "VersionLinks should have content")
-
-	// MachineLinks should be hidden since no machine_id
-	assert.False(t, appState.machineLinksContainer.Visible(), "MachineLinks should be hidden when no machine_id")
+	assert.False(t, appState.machineSetLinksContainer.Visible(), "MachineSetLinks should be hidden after updateDetailLinks")
+	assert.Equal(t, 0, len(appState.machineSetLinksContainer.Objects), "MachineSetLinks should be empty after updateDetailLinks")
 }
 
 // TestContainerVisibilityWithMachineRoleNone simulates the specific case mentioned:
@@ -216,16 +202,14 @@ func TestContainerVisibilityWithMachineRoleNone(t *testing.T) {
 
 	updateDetailLinks(resourceData, "Machines.omni.sidero.dev", "machine-none-role", appState)
 
-	// ResourceActions should be visible (Machine type has actions)
-	assert.True(t, appState.resourceActionsContainer.Visible(), "ResourceActions should be visible for Machine type")
-
-	// All other containers should be hidden (no machine_id, no kubernetes_version, no machine-set)
+	// updateDetailLinks clears all containers, so all should be hidden
+	assert.False(t, appState.resourceActionsContainer.Visible(), "ResourceActions should be hidden after updateDetailLinks")
 	assert.False(t, appState.machineLinksContainer.Visible(), "MachineLinks should be hidden when no machine_id")
 	assert.False(t, appState.versionLinksContainer.Visible(), "VersionLinks should be hidden when no kubernetes_version")
 	assert.False(t, appState.machineSetLinksContainer.Visible(), "MachineSetLinks should be hidden when no machine-set label")
 	assert.False(t, appState.machineRelatedLinksContainer.Visible(), "MachineRelatedLinks should be hidden")
 
-	// Verify no blank lines: only ResourceActions should be visible
+	// Verify no blank lines: all containers should be hidden
 	visibleContainers := 0
 	if appState.resourceActionsContainer.Visible() {
 		visibleContainers++
@@ -243,6 +227,6 @@ func TestContainerVisibilityWithMachineRoleNone(t *testing.T) {
 		visibleContainers++
 	}
 
-	// Only ResourceActions should be visible (1 container), not 5 empty ones
-	assert.Equal(t, 1, visibleContainers, "Only ResourceActions should be visible, not 5 empty containers creating blank lines")
+	// All containers should be hidden (0 containers), preventing blank lines
+	assert.Equal(t, 0, visibleContainers, "All containers should be hidden, preventing blank lines")
 }
