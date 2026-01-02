@@ -1,6 +1,13 @@
 name: Build and Release
 
 on:
+  workflow_call:
+    inputs:
+      branch:
+        description: "Branch to build and release"
+        required: true
+        type: string
+        default: "main"
   pull_request:
     types: [closed, labeled]
     branches:
@@ -49,9 +56,12 @@ jobs:
             exit 1
           fi
           # Extract version from label (handles formats like "release:0.0.11", "v0.0.11", "0.0.11")
-          VERSION=$(echo "$LABEL" | sed -E 's/^(release:|v?)//' | sed -E 's/^v//')
-          if [ -z "$VERSION" ]; then
-            echo "Could not extract version from label: $LABEL"
+          # Remove "release:" prefix if present, then remove "v" prefix if present
+          VERSION=$(echo "$LABEL" | sed -E 's/^release://' | sed -E 's/^v//')
+          # Validate version format (must be X.Y.Z)
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid version format extracted from label: $LABEL -> $VERSION"
+            echo "Expected format: X.Y.Z (e.g., 0.0.11)"
             exit 1
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -188,7 +198,8 @@ jobs:
           fi
 
           mkdir -p dist
-          go build -ldflags "-X github.com/jubblin/omni-api/main.Version=${VERSION}" -o "dist/${OUTPUT_NAME}" .
+          # Set version via ldflags for both main package and handlers package
+          go build -ldflags "-X github.com/jubblin/omni-api/main.Version=${VERSION} -X github.com/jubblin/omni-api/internal/api/handlers.Version=${VERSION}" -o "dist/${OUTPUT_NAME}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
