@@ -4,14 +4,5 @@
   "rebaseWhen": "behind-base-branch",
   "baseBranches": ["dev"],
   "labels": ["dependencies"],
-  "automergeStrategy": "merge-commit",
-  "packageRules": [
-    {
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true,
-      "pinDigests": true,
-      "schedule": ["every day after 4am"]
-    }
-  ]
+  "automergeStrategy": "merge-commit"
 }
