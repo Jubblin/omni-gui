@@ -2,7 +2,7 @@ name: Auto-increment Version Label on PR
 
 on:
   pull_request:
-    # types: [opened, synchronize, reopened]
+    # types: [opened, synchronize, reopened, closed, edited]
     branches:
       - main
       - dev
@@ -23,7 +23,9 @@ jobs:
   bump-version-label:
     name: Update Version Label
     runs-on: ubuntu-latest
-    if: github.event.pull_request.base.ref == 'main' || github.event.pull_request.base.ref == 'dev' || github.event.pull_request.base.ref == 'renovate/**'
+    if: |
+      github.event.pull_request.merged == true &&
+      (github.event.pull_request.base.ref == 'main' || github.event.pull_request.base.ref == 'dev' || github.event.pull_request.base.ref == 'renovate/**')
 
     steps:
       - name: Checkout base branch
