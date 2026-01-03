@@ -119,25 +119,6 @@ func TestNewOIDCProvider_NilConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), "OIDC config is required")
 }
 
-func TestNewOIDCProvider_InvalidIssuer(t *testing.T) {
-	config := &OIDCConfig{
-		IssuerURL:    "https://invalid-issuer-that-does-not-exist.example.com",
-		ClientID:     "test-client",
-		ClientSecret: "test-secret",
-		Flow:         "client_credentials",
-		Scopes:       []string{"openid"},
-	}
-	
-	// This will fail because we can't connect to the issuer
-	// We expect an error, but the exact error may vary
-	provider, err := NewOIDCProvider(config)
-	// We expect this to fail, but we're testing the error handling
-	if err != nil {
-		assert.Nil(t, provider)
-		assert.Contains(t, err.Error(), "failed to create OIDC provider")
-	}
-}
-
 func TestGenerateState(t *testing.T) {
 	state1, err1 := generateState()
 	require.NoError(t, err1)

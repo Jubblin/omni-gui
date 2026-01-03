@@ -2,9 +2,11 @@ name: Auto-increment Version Label on PR
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # types: [opened, synchronize, reopened]
     branches:
       - main
+      - dev
+      - renovate/**
   workflow_dispatch:
     inputs:
       branch:

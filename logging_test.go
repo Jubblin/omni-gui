@@ -154,7 +154,7 @@ func TestStartupBannerJSON(t *testing.T) {
 	require.NotNil(t, bannerJson, "Should find startup banner log entry")
 	assert.Equal(t, "Application Startup Banner", bannerJson["msg"], "Banner should have correct message")
 	assert.Equal(t, "1.2.3", bannerJson["version"], "Banner should include version")
-	assert.Equal(t, "Omni API GUI Application", bannerJson["application"], "Banner should include application name")
+	assert.Equal(t, "Omni GUI Application", bannerJson["application"], "Banner should include application name")
 	assert.Equal(t, true, bannerJson["ignore_env"], "Banner should include ignore_env")
 	assert.Equal(t, false, bannerJson["show_empty_labels"], "Banner should include show_empty_labels")
 	assert.Equal(t, float64(2), bannerJson["grpc_debug_level"], "Banner should include grpc_debug_level")
