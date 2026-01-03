@@ -23,7 +23,7 @@ jobs:
   bump-version-label:
     name: Update Version Label
     runs-on: ubuntu-latest
-    if: github.event.pull_request.base.ref == 'main'
+    if: github.event.pull_request.base.ref == 'main' || github.event.pull_request.base.ref == 'dev' || github.event.pull_request.base.ref == 'renovate/**'
 
     steps:
       - name: Checkout base branch
