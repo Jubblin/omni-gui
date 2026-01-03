@@ -4,13 +4,13 @@ go 1.25.5
 
 require (
 	fyne.io/fyne/v2 v2.7.1
-	github.com/coreos/go-oidc/v3 v3.10.0
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/cosi-project/runtime v1.13.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/siderolabs/omni/client v1.4.6
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.33.0
-	google.golang.org/protobuf v1.36.10
+	golang.org/x/oauth2 v0.34.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
