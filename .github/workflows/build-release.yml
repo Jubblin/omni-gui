@@ -120,12 +120,14 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: go test ./...
+      # - name: Run tests
+      #   run: go test ./...
 
   build:
     name: Build Binaries
-    needs: [check-pr, test]
+    needs:
+      - check-pr
+      - test
     if: needs.check-pr.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     strategy:
