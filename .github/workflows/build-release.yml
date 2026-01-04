@@ -47,23 +47,110 @@ jobs:
           echo "label=$LABEL" >> $GITHUB_OUTPUT
           echo "Found label: $LABEL"
 
-      - name: Extract version from label
+      - name: Extract version from label or trigger version-bump
         id: version
         run: |
           LABEL="${{ steps.labels.outputs.label }}"
+
+          # If no label found, trigger version-bump workflow and wait for it
           if [ -z "$LABEL" ]; then
-            echo "No release label found"
-            exit 1
+            echo "No release label found, triggering version-bump workflow..."
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            
+            # Check if version-bump workflow is already running for this PR
+            RUNNING_RUN=$(gh run list --workflow="version-bump.yml" --limit 10 --json databaseId,status,conclusion,headBranch,event --jq ".[] | select((.headBranch == \"${{ github.event.pull_request.head.ref }}\" or .event == \"pull_request\") and (.status == \"in_progress\" or .status == \"queued\" or .status == \"waiting\")) | .databaseId" | head -1)
+            
+            if [ -n "$RUNNING_RUN" ]; then
+              echo "Version-bump workflow already running (run ID: $RUNNING_RUN), waiting for completion..."
+              WORKFLOW_RUN_ID="$RUNNING_RUN"
+            else
+              # Trigger version-bump workflow via workflow_dispatch
+              echo "Triggering version-bump workflow..."
+              WORKFLOW_OUTPUT=$(gh workflow run "version-bump.yml" \
+                --ref "$BASE_REF" \
+                --field branch="$BASE_REF" 2>&1)
+              
+              if [ $? -ne 0 ]; then
+                echo "Failed to trigger version-bump workflow: $WORKFLOW_OUTPUT"
+                # Try to find the run that was just created
+                sleep 3
+                WORKFLOW_RUN_ID=$(gh run list --workflow="version-bump.yml" --branch="$BASE_REF" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")
+              else
+                echo "Version-bump workflow triggered successfully"
+                # Get the run ID
+                sleep 3
+                WORKFLOW_RUN_ID=$(gh run list --workflow="version-bump.yml" --branch="$BASE_REF" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || echo "")
+              fi
+            fi
+            
+            if [ -z "$WORKFLOW_RUN_ID" ]; then
+              echo "Could not determine version-bump workflow run ID"
+              exit 1
+            fi
+            
+            echo "Waiting for version-bump workflow run $WORKFLOW_RUN_ID to complete..."
+            
+            # Wait for the workflow to complete (max 3 minutes, check every 5 seconds)
+            MAX_WAIT=180
+            ELAPSED=0
+            while [ $ELAPSED -lt $MAX_WAIT ]; do
+              sleep 5
+              ELAPSED=$((ELAPSED + 5))
+              
+              # Check workflow run status
+              RUN_INFO=$(gh run view "$WORKFLOW_RUN_ID" --json status,conclusion --jq '.status + "," + (.conclusion // "null")' 2>/dev/null || echo "unknown,null")
+              
+              STATUS=$(echo "$RUN_INFO" | cut -d',' -f1)
+              CONCLUSION=$(echo "$RUN_INFO" | cut -d',' -f2)
+              
+              if [ "$STATUS" == "completed" ]; then
+                if [ "$CONCLUSION" == "success" ]; then
+                  echo "Version-bump workflow completed successfully"
+                  break
+                elif [ "$CONCLUSION" == "failure" ] || [ "$CONCLUSION" == "cancelled" ]; then
+                  echo "Version-bump workflow failed or was cancelled: $CONCLUSION"
+                  exit 1
+                fi
+              fi
+              
+              echo "Waiting for version-bump workflow... (${ELAPSED}s/${MAX_WAIT}s) - Status: $STATUS"
+            done
+            
+            if [ $ELAPSED -ge $MAX_WAIT ]; then
+              echo "Timeout waiting for version-bump workflow to complete"
+              exit 1
+            fi
+            
+            # Wait a bit more for label to be applied
+            echo "Waiting for label to be applied..."
+            sleep 5
+            
+            # Re-check PR labels after version-bump completes
+            echo "Re-checking PR labels after version-bump..."
+            LABEL=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -E '^(release:|v?)[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
+            
+            if [ -z "$LABEL" ]; then
+              echo "Still no release label found after version-bump workflow completed"
+              echo "Available labels:"
+              gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' || true
+              exit 1
+            fi
+            
+            echo "Found label after version-bump: $LABEL"
           fi
+
           # Extract version from label (handles formats like "release:0.0.11", "v0.0.11", "0.0.11")
           # Remove "release:" prefix if present, then remove "v" prefix if present
           VERSION=$(echo "$LABEL" | sed -E 's/^release://' | sed -E 's/^v//')
+
           # Validate version format (must be X.Y.Z)
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "Invalid version format extracted from label: $LABEL -> $VERSION"
             echo "Expected format: X.Y.Z (e.g., 0.0.11)"
             exit 1
           fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
