@@ -49,7 +49,7 @@ jobs:
 
       - name: Get existing version label from PR
         id: existing-label
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -108,7 +108,7 @@ jobs:
 
       - name: Update version label on PR
         if: steps.version-check.outputs.needs-update == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -158,7 +158,7 @@ jobs:
 
       - name: Comment on PR (version label updated)
         if: steps.version-check.outputs.needs-update == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -191,7 +191,7 @@ jobs:
 
       - name: Comment on PR (no update needed)
         if: steps.version-check.outputs.needs-update == 'false'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
