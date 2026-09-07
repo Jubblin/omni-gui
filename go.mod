@@ -1,13 +1,13 @@
 module github.com/jubblin/omni-api
 
-go 1.26.6
+go 1.26.7
 
 require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/cosi-project/runtime v1.16.3
 	github.com/gin-gonic/gin v1.12.0
-	github.com/siderolabs/omni/client v1.10.4
+	github.com/siderolabs/omni/client v1.10.6
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/protobuf v1.36.12
