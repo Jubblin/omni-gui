@@ -74,6 +74,8 @@ github.com/coreos/go-oidc/v3 v3.17.0 h1:hWBGaQfbi0iVviX4ibC7bk8OKT5qNr4klBaCHVNv
 github.com/coreos/go-oidc/v3 v3.17.0/go.mod h1:wqPbKFrVnE90vty060SB40FCJ8fTHTxSwyXJqZH+sI8=
 github.com/coreos/go-oidc/v3 v3.20.0 h1:EtE0WIBHk03N+DqGkY4+UONzzZHk7amKt6IyNd7OsZE=
 github.com/coreos/go-oidc/v3 v3.20.0/go.mod h1:DYCf24+ncYi+XkIH97GY1+dqoRlbaSI26KVTCI9SrY4=
+github.com/coreos/go-oidc/v3 v3.21.0 h1:wZo4Q9Pum8dYEj0eMUPrqR+kvuGkeUplbLpNCkBqoWM=
+github.com/coreos/go-oidc/v3 v3.21.0/go.mod h1:DYCf24+ncYi+XkIH97GY1+dqoRlbaSI26KVTCI9SrY4=
 github.com/cosi-project/runtime v1.13.0 h1:EKy/GwhVTgq131w0g3pbB0bTEf6FiZFjbK6go/I0pmE=
 github.com/cosi-project/runtime v1.13.0/go.mod h1:/9fspODJfZrO5dQatMRgN440K8DjWP1jFSgiLX+FmQc=
 github.com/cosi-project/runtime v1.16.2 h1:sgjOMrnaElrja93kkJJJIQYwd45PhpGl9cBci9yqn5c=
