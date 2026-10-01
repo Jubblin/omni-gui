@@ -7,7 +7,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/cosi-project/runtime v1.16.3
 	github.com/gin-gonic/gin v1.12.0
-	github.com/siderolabs/omni/client v1.12.1
+	github.com/siderolabs/omni/client v1.12.3
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/oauth2 v0.37.0
 	google.golang.org/grpc v1.84.0
