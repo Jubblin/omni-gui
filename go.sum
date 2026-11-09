@@ -100,6 +100,8 @@ github.com/cosi-project/runtime v1.16.3 h1:EQ1oubPjAVPnAFc5GhSGfHuiPcm8b2g2XsPnp
 github.com/cosi-project/runtime v1.16.3/go.mod h1:p3nyBuIqeipcfQHuM9uGjLkFN2gYA9GJFL4oSEEtmm0=
 github.com/cosi-project/runtime v1.16.4 h1:zwcXWoxyJfSXftYqd8BzYDZU/gdbZgQa20Dl1IGz0bk=
 github.com/cosi-project/runtime v1.16.4/go.mod h1:SeOLet+6E+NduDjfD1zgv7/2Egq6g5LYeVFF6mZpZMs=
+github.com/cosi-project/runtime v1.17.0 h1:e0CmblUE8cn/HexfBlwdWcDlaXUrf53Djsb7G0b59j0=
+github.com/cosi-project/runtime v1.17.0/go.mod h1:JiSn2h1RyCPR1CvCbw7O2puw7KeGBBchhZMlnNrO0M0=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
