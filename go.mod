@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	fyne.io/fyne/v2 v2.8.2
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/cosi-project/runtime v1.16.4
+	github.com/cosi-project/runtime v1.17.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/siderolabs/omni/client v1.13.2
 	github.com/stretchr/testify v1.12.1
